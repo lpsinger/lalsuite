@@ -73,6 +73,10 @@
 
 #include <lal/DetResponse.h>
 
+#ifdef __INTEL_OFFLOAD
+#pragma offload_attribute (push, target(mic))
+#endif
+
 #include <chealpix.h>
 
 #include <gsl/gsl_cblas.h>
@@ -338,6 +342,11 @@ static double complex exp_i(double phi) {
 static double cabs2(double complex z) {
     return gsl_pow_2(creal(z)) + gsl_pow_2(cimag(z));
 }
+
+
+#ifdef __INTEL_OFFLOAD
+#pragma offload_attribute (pop)
+#endif
 
 
 /* Perform sky localization based on TDOAs alone. */
