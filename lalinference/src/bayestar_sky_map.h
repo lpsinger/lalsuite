@@ -74,7 +74,7 @@ double *bayestar_sky_map_toa(
     long *npix, /* In/out: number of HEALPix pixels. */
     double gmst, /* Greenwich mean sidereal time in radians. */
     int nifos, /* Input: number of detectors. */
-    const double **locs, /* Input: array of detector positions. */
+    const double locs[][3], /* Input: array of detector positions. */
     const double *toas, /* Input: array of times of arrival. */
     const double *w_toas /* Input: sum-of-squares weights, (1/TOA variance)^2. */
 );
@@ -87,8 +87,8 @@ double bayestar_log_posterior_toa_snr(
     double twopsi,
     double gmst, /* Greenwich mean sidereal time in radians. */
     int nifos, /* Input: number of detectors. */
-    const float (**responses)[3], /* Pointers to detector responses. */
-    const double **locations, /* Pointers to locations of detectors in Cartesian geographic coordinates. */
+    const float responses[][3][3], /* Pointers to detector responses. */
+    const double locations[][3], /* Pointers to locations of detectors in Cartesian geographic coordinates. */
     const double *toas, /* Input: array of times of arrival with arbitrary relative offset. (Make toas[0] == 0.) */
     const double *snrs, /* Input: array of SNRs. */
     const double *w_toas, /* Input: sum-of-squares weights, (1/TOA variance)^2. */
@@ -101,8 +101,8 @@ double *bayestar_sky_map_toa_snr(
     long *npix, /* In/out: number of HEALPix pixels. */
     double gmst, /* Greenwich mean sidereal time in radians. */
     int nifos, /* Input: number of detectors. */
-    const float (**responses)[3], /* Pointers to detector responses. */
-    const double **locations, /* Pointers to locations of detectors in Cartesian geographic coordinates. */
+    const float responses[][3][3], /* Pointers to detector responses. */
+    const double locations[][3], /* Pointers to locations of detectors in Cartesian geographic coordinates. */
     const double *toas, /* Input: array of times of arrival with arbitrary relative offset. (Make toas[0] == 0.) */
     const double *snrs, /* Input: array of SNRs. */
     const double *w_toas, /* Input: sum-of-squares weights, (1/TOA variance)^2. */
@@ -117,8 +117,8 @@ double *bayestar_sky_map_toa_phoa_snr(
     long *npix, /* In/out: number of HEALPix pixels. */
     double gmst, /* Greenwich mean sidereal time in radians. */
     int nifos, /* Input: number of detectors. */
-    const float (**responses)[3], /* Pointers to detector responses. */
-    const double **locations, /* Pointers to locations of detectors in Cartesian geographic coordinates. */
+    const float responses[][3][3], /* Pointers to detector responses. */
+    const double locations[][3], /* Pointers to locations of detectors in Cartesian geographic coordinates. */
     const double *toas, /* Input: array of times of arrival with arbitrary relative offset. (Make toas[0] == 0.) */
     const double *phoas, /* Input: array of phases of arrival with arbitrary relative offset. (Make phoas[0] == 0.) */
     const double *snrs, /* Input: array of SNRs. */
