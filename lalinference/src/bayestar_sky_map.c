@@ -303,23 +303,6 @@ fail:
 }
 
 
-/* Perform sky localization based on TDOAs alone. */
-double *bayestar_sky_map_toa(
-    long *npix, /* In/out: number of HEALPix pixels. */
-    double gmst, /* Greenwich mean sidereal time in radians. */
-    int nifos, /* Input: number of detectors. */
-    const double locs[][3], /* Input: array of detector positions. */
-    const double *toas, /* Input: array of times of arrival. */
-    const double *w_toas /* Input: sum-of-squares weights, (1/TOA variance)^2. */
-) {
-    long maxpix;
-    gsl_permutation *pix_perm = NULL;
-    double *ret = bayestar_sky_map_toa_adapt_resolution(&pix_perm, &maxpix, npix, gmst, nifos, locs, toas, w_toas, autoresolution_count_pix_toa_snr);
-    gsl_permutation_free(pix_perm);
-    return ret;
-}
-
-
 typedef struct {
     double A;
     double B;
@@ -354,6 +337,23 @@ static double complex exp_i(double phi) {
 
 static double cabs2(double complex z) {
     return gsl_pow_2(creal(z)) + gsl_pow_2(cimag(z));
+}
+
+
+/* Perform sky localization based on TDOAs alone. */
+double *bayestar_sky_map_toa(
+    long *npix, /* In/out: number of HEALPix pixels. */
+    double gmst, /* Greenwich mean sidereal time in radians. */
+    int nifos, /* Input: number of detectors. */
+    const double locs[][3], /* Input: array of detector positions. */
+    const double *toas, /* Input: array of times of arrival. */
+    const double *w_toas /* Input: sum-of-squares weights, (1/TOA variance)^2. */
+) {
+    long maxpix;
+    gsl_permutation *pix_perm = NULL;
+    double *ret = bayestar_sky_map_toa_adapt_resolution(&pix_perm, &maxpix, npix, gmst, nifos, locs, toas, w_toas, autoresolution_count_pix_toa_snr);
+    gsl_permutation_free(pix_perm);
+    return ret;
 }
 
 
