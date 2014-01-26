@@ -40,6 +40,9 @@
  * Table 1 of \cite ABCF2001 or Eqs. (B11)--(B17) to compute the arm
  * direction unit vectors.
  */
+#ifdef __INTEL_OFFLOAD
+__attribute__((target(mic)))
+#endif
 void XLALComputeDetAMResponse(
 	double *fplus,		/**< Returned value of F+ */
 	double *fcross,		/**< Returned value of Fx */

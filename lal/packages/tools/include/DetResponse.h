@@ -178,6 +178,9 @@ LALComputeDetAMResponse( LALStatus             *status,
                          const LALDetAndSource *pDetAndSrc,
                          const LIGOTimeGPS     *gps);
 
+#ifdef __INTEL_OFFLOAD
+__attribute__((target(mic)))
+#endif
 void XLALComputeDetAMResponse(
 	double *fplus,
 	double *fcross,
