@@ -672,24 +672,21 @@ double *bayestar_sky_map_toa_phoa_snr(
     /* Hold GSL return values for any thread that fails. */
     int gsl_errno = GSL_SUCCESS;
 
-    /* Storage for old GSL error handler. */
-    gsl_error_handler_t *old_handler;
-
     /* Maximum number of subdivisions for adaptive integration. */
-    static const size_t subdivision_limit = 64;
+    /* static */ const size_t subdivision_limit = 64;
 
     /* Subdivide radial integral where likelihood is this fraction of the maximum,
      * will be used in solving the quadratic to find the breakpoints */
-    static const double eta = 0.01;
+    /* static */ const double eta = 0.01;
 
     /* Use this many integration steps in 2*psi  */
-    static const int ntwopsi = 16;
+    /* static */ const int ntwopsi = 16;
 
     /* Number of integration steps in cos(inclination) */
-    static const int nu = 16;
+    /* static */ const int nu = 16;
 
     /* Number of integration steps in arrival time */
-    static const int nt = 16;
+    /* static */ const int nt = 16;
 
     /* Rescale distances so that furthest horizon distance is 1. */
     {
@@ -724,112 +721,142 @@ double *bayestar_sky_map_toa_phoa_snr(
         P[ipix] = -INFINITY;
     }
 
-    /* Use our own error handler while in parallel section to avoid concurrent
-     * calls to the GSL error handler, which if provided by the user may not
-     * be threadsafe. */
-    old_handler = gsl_set_error_handler(my_gsl_error);
+    long ipixes_[maxpix];
+    double P_[maxpix];
 
-    /* Compute posterior factor for amplitude consistency. */
-    #pragma omp parallel for firstprivate(gsl_errno) lastprivate(gsl_errno)
     for (i = 0; i < maxpix; i ++)
     {
-       /* Cancel further computation if a GSL error condition has occurred.
-        *
-        * Note: if one thread sets gsl_errno, not necessarily all thread will
-        * get the updated value. That's OK, because most failure modes will
-        * cause GSL error conditions on all threads. If we cared to have any
-        * failure on any thread terminate all of the other threads as quickly
-        * as possible, then we would want to insert the following pragma here:
-        *
-        *     #pragma omp flush(gsl_errno)
-        *
-        * and likewise before any point where we set gsl_errno.
-        */
+        ipixes_[i] = gsl_permutation_get(pix_perm, i);
+    }
 
-        if (gsl_errno != GSL_SUCCESS)
-            goto skip;
+    /* Free permutation. */
+    gsl_permutation_free(pix_perm);
 
+    #pragma offload target(mic) in(locations, responses, toas, phoas, snrs, w_toas, w1s, w2s, horizons, d1, exp_i_phoas: length(nifos)) in(ipixes_: length(maxpix)) out(P_: length(maxpix))
+    {
+        /* Use our own error handler while in parallel section to avoid concurrent
+         * calls to the GSL error handler, which if provided by the user may not
+         * be threadsafe. */
+        gsl_error_handler_t *old_handler = gsl_set_error_handler(my_gsl_error);
+
+        /* Compute posterior factor for amplitude consistency. */
+        #pragma omp parallel for firstprivate(gsl_errno) lastprivate(gsl_errno)
+        for (i = 0; i < maxpix; i ++)
         {
-            long ipix = gsl_permutation_get(pix_perm, i);
-            double complex F[nifos];
-            double theta, phi;
-            int itwopsi, iu, it, iifo;
-            double accum = -INFINITY;
-            double complex exp_i_toaphoa[nifos];
-            double dtau[nifos], mean_dtau;
+           /* Cancel further computation if a GSL error condition has occurred.
+            *
+            * Note: if one thread sets gsl_errno, not necessarily all thread will
+            * get the updated value. That's OK, because most failure modes will
+            * cause GSL error conditions on all threads. If we cared to have any
+            * failure on any thread terminate all of the other threads as quickly
+            * as possible, then we would want to insert the following pragma here:
+            *
+            *     #pragma omp flush(gsl_errno)
+            *
+            * and likewise before any point where we set gsl_errno.
+            */
 
-            /* Prepare workspace for adaptive integrator. */
-            gsl_integration_workspace *workspace = gsl_integration_workspace_alloc(subdivision_limit);
+            if (gsl_errno != GSL_SUCCESS)
+                goto skip;
 
-            /* If the workspace could not be allocated, then record the GSL
-             * error value for later reporting when we leave the parallel
-             * section. Then, skip to the next loop iteration. */
-            if (!workspace)
             {
-               gsl_errno = GSL_ENOMEM;
-               goto skip;
-            }
+                long ipix = ipixes_[i];
+                double complex F[nifos];
+                double theta, phi;
+                int itwopsi, iu, it, iifo;
+                double accum = -INFINITY;
+                double complex exp_i_toaphoa[nifos];
+                double dtau[nifos], mean_dtau;
 
-            /* Look up polar coordinates of this pixel */
-            pix2ang_ring(nside, ipix, &theta, &phi);
+                /* Prepare workspace for adaptive integrator. */
+                gsl_integration_workspace *workspace = gsl_integration_workspace_alloc(subdivision_limit);
 
-            for (iifo = 0; iifo < nifos; iifo ++)
-            {
-                dtau[iifo] = toa_error(theta, phi, gmst, locations[iifo], toas[iifo]);
-                exp_i_toaphoa[iifo] = exp_i_phoas[iifo] * exp_i(w1s[iifo] * dtau[iifo]);
-            }
-
-            /* Find mean arrival time error */
-            mean_dtau = gsl_stats_wmean(w_toas, 1, dtau, 1, nifos);
-
-            /* Look up antenna factors */
-            for (iifo = 0; iifo < nifos; iifo++)
-            {
-                XLALComputeDetAMResponse(
-                    (double *)&F[iifo],     /* Type-punned real part */
-                    1 + (double *)&F[iifo], /* Type-punned imag part */
-                    responses[iifo], phi, M_PI_2 - theta, 0, gmst);
-                F[iifo] *= d1[iifo];
-            }
-
-            /* Integrate over 2*psi */
-            for (itwopsi = 0; itwopsi < ntwopsi; itwopsi++)
-            {
-                const double twopsi = (2 * M_PI / ntwopsi) * itwopsi;
-                const double complex exp_i_twopsi = exp_i(twopsi);
-
-                /* Integrate over u from u=-1 to u=1. */
-                for (iu = -nu; iu <= nu; iu++)
+                /* If the workspace could not be allocated, then record the GSL
+                 * error value for later reporting when we leave the parallel
+                 * section. Then, skip to the next loop iteration. */
+                if (!workspace)
                 {
-                    const double u = (double)iu / nu;
-                    const double u2 = gsl_pow_2(u);
+                   gsl_errno = GSL_ENOMEM;
+                   goto skip;
+                }
 
-                    double A = 0, B = 0;
-                    double breakpoints[5];
-                    int num_breakpoints = 0;
-                    double log_offset = -INFINITY;
+                /* Look up polar coordinates of this pixel */
+                pix2ang_ring(nside, ipix, &theta, &phi);
 
-                    /* The log-likelihood is quadratic in the estimated and true
-                     * values of the SNR, and in 1/r. It is of the form A/r^2 + B/r,
-                     * where A depends only on the true values of the SNR and is
-                     * strictly negative and B depends on both the true values and
-                     * the estimates and is strictly positive.
-                     *
-                     * The middle breakpoint is at the maximum of the log-likelihood,
-                     * occurring at 1/r=-B/2A. The lower and upper breakpoints occur
-                     * when the likelihood becomes eta times its maximum value. This
-                     * occurs when
-                     *
-                     *   A/r^2 + B/r = log(eta) - B^2/4A.
-                     *
-                     */
+                for (iifo = 0; iifo < nifos; iifo ++)
+                {
+                    dtau[iifo] = toa_error(theta, phi, gmst, locations[iifo], toas[iifo]);
+                    exp_i_toaphoa[iifo] = exp_i_phoas[iifo] * exp_i(w1s[iifo] * dtau[iifo]);
+                }
 
-                    /* Perform arrival time integral */
-                    double accum1 = -INFINITY;
-                    for (it = -nt/2; it <= nt/2; it++)
+                /* Find mean arrival time error */
+                mean_dtau = gsl_stats_wmean(w_toas, 1, dtau, 1, nifos);
+
+                /* Look up antenna factors */
+                for (iifo = 0; iifo < nifos; iifo++)
+                {
+                    XLALComputeDetAMResponse(
+                        (double *)&F[iifo],     /* Type-punned real part */
+                        1 + (double *)&F[iifo], /* Type-punned imag part */
+                        responses[iifo], phi, M_PI_2 - theta, 0, gmst);
+                    F[iifo] *= d1[iifo];
+                }
+
+                /* Integrate over 2*psi */
+                for (itwopsi = 0; itwopsi < ntwopsi; itwopsi++)
+                {
+                    const double twopsi = (2 * M_PI / ntwopsi) * itwopsi;
+                    const double complex exp_i_twopsi = exp_i(twopsi);
+
+                    /* Integrate over u from u=-1 to u=1. */
+                    for (iu = -nu; iu <= nu; iu++)
                     {
-                        const double t = mean_dtau + LAL_REARTH_SI / LAL_C_SI * it / nt;
-                        double complex i0arg_complex = 0;
+                        const double u = (double)iu / nu;
+                        const double u2 = gsl_pow_2(u);
+
+                        double A = 0, B = 0;
+                        double breakpoints[5];
+                        int num_breakpoints = 0;
+                        double log_offset = -INFINITY;
+
+                        /* The log-likelihood is quadratic in the estimated and true
+                         * values of the SNR, and in 1/r. It is of the form A/r^2 + B/r,
+                         * where A depends only on the true values of the SNR and is
+                         * strictly negative and B depends on both the true values and
+                         * the estimates and is strictly positive.
+                         *
+                         * The middle breakpoint is at the maximum of the log-likelihood,
+                         * occurring at 1/r=-B/2A. The lower and upper breakpoints occur
+                         * when the likelihood becomes eta times its maximum value. This
+                         * occurs when
+                         *
+                         *   A/r^2 + B/r = log(eta) - B^2/4A.
+                         *
+                         */
+
+                        /* Perform arrival time integral */
+                        double accum1 = -INFINITY;
+                        for (it = -nt/2; it <= nt/2; it++)
+                        {
+                            const double t = mean_dtau + LAL_REARTH_SI / LAL_C_SI * it / nt;
+                            double complex i0arg_complex = 0;
+                            for (iifo = 0; iifo < nifos; iifo++)
+                            {
+                                const double complex tmp = F[iifo] * exp_i_twopsi;
+                                /* FIXME: could use - sign here to avoid conj below, but
+                                 * this probably just sets our sign convention relative to
+                                 * detection pipeline */
+                                double complex phase_rhotimesr = 0.5 * (1 + u2) * creal(tmp) + I * u * cimag(tmp);
+                                const double abs_rhotimesr_2 = cabs2(phase_rhotimesr);
+                                const double abs_rhotimesr = sqrt(abs_rhotimesr_2);
+                                phase_rhotimesr /= abs_rhotimesr;
+                                i0arg_complex += exp_i_toaphoa[iifo] * exp_i(-w1s[iifo] * t) * phase_rhotimesr * gsl_pow_2(snrs[iifo]);
+                            }
+                            const double i0arg = cabs(i0arg_complex);
+                            accum1 = logaddexp(accum1, log(gsl_sf_bessel_I0_scaled(i0arg)) + i0arg - 0.5 * gsl_stats_wtss_m(w_toas, 1, dtau, 1, nifos, t));
+                        }
+
+                        /* Loop over detectors */
                         for (iifo = 0; iifo < nifos; iifo++)
                         {
                             const double complex tmp = F[iifo] * exp_i_twopsi;
@@ -839,98 +866,79 @@ double *bayestar_sky_map_toa_phoa_snr(
                             double complex phase_rhotimesr = 0.5 * (1 + u2) * creal(tmp) + I * u * cimag(tmp);
                             const double abs_rhotimesr_2 = cabs2(phase_rhotimesr);
                             const double abs_rhotimesr = sqrt(abs_rhotimesr_2);
-                            phase_rhotimesr /= abs_rhotimesr;
-                            i0arg_complex += exp_i_toaphoa[iifo] * exp_i(-w1s[iifo] * t) * phase_rhotimesr * gsl_pow_2(snrs[iifo]);
+
+                            A += abs_rhotimesr_2;
+                            B += abs_rhotimesr * snrs[iifo];
                         }
-                        const double i0arg = cabs(i0arg_complex);
-                        accum1 = logaddexp(accum1, log(gsl_sf_bessel_I0_scaled(i0arg)) + i0arg - 0.5 * gsl_stats_wtss_m(w_toas, 1, dtau, 1, nifos, t));
-                    }
+                        A *= -0.5;
 
-                    /* Loop over detectors */
-                    for (iifo = 0; iifo < nifos; iifo++)
-                    {
-                        const double complex tmp = F[iifo] * exp_i_twopsi;
-                        /* FIXME: could use - sign here to avoid conj below, but
-                         * this probably just sets our sign convention relative to
-                         * detection pipeline */
-                        double complex phase_rhotimesr = 0.5 * (1 + u2) * creal(tmp) + I * u * cimag(tmp);
-                        const double abs_rhotimesr_2 = cabs2(phase_rhotimesr);
-                        const double abs_rhotimesr = sqrt(abs_rhotimesr_2);
-
-                        A += abs_rhotimesr_2;
-                        B += abs_rhotimesr * snrs[iifo];
-                    }
-                    A *= -0.5;
-
-                    {
-                        const double middle_breakpoint = -2 * A / B;
-                        const double lower_breakpoint = 1 / (1 / middle_breakpoint + sqrt(log(eta) / A));
-                        const double upper_breakpoint = 1 / (1 / middle_breakpoint - sqrt(log(eta) / A));
-                        breakpoints[num_breakpoints++] = min_distance;
-                        if(lower_breakpoint > breakpoints[num_breakpoints-1] && lower_breakpoint < max_distance)
-                            breakpoints[num_breakpoints++] = lower_breakpoint;
-                        if(middle_breakpoint > breakpoints[num_breakpoints-1] && middle_breakpoint < max_distance)
-                            breakpoints[num_breakpoints++] = middle_breakpoint;
-                        if(upper_breakpoint > breakpoints[num_breakpoints-1] && upper_breakpoint < max_distance)
-                            breakpoints[num_breakpoints++] = upper_breakpoint;
-                        breakpoints[num_breakpoints++] = max_distance;
-                    }
-
-                    {
-                        /*
-                         * Set log_offset to the maximum of the logarithm of the
-                         * radial integrand evaluated at all of the breakpoints. */
-                        int ibreakpoint;
-                        for (ibreakpoint = 0; ibreakpoint < num_breakpoints; ibreakpoint++)
                         {
-                            const double new_log_offset = log_radial_integrand(
-                                breakpoints[ibreakpoint], A, B, prior_distance_power);
-                            if (new_log_offset < INFINITY && new_log_offset > log_offset)
-                                log_offset = new_log_offset;
+                            const double middle_breakpoint = -2 * A / B;
+                            const double lower_breakpoint = 1 / (1 / middle_breakpoint + sqrt(log(eta) / A));
+                            const double upper_breakpoint = 1 / (1 / middle_breakpoint - sqrt(log(eta) / A));
+                            breakpoints[num_breakpoints++] = min_distance;
+                            if(lower_breakpoint > breakpoints[num_breakpoints-1] && lower_breakpoint < max_distance)
+                                breakpoints[num_breakpoints++] = lower_breakpoint;
+                            if(middle_breakpoint > breakpoints[num_breakpoints-1] && middle_breakpoint < max_distance)
+                                breakpoints[num_breakpoints++] = middle_breakpoint;
+                            if(upper_breakpoint > breakpoints[num_breakpoints-1] && upper_breakpoint < max_distance)
+                                breakpoints[num_breakpoints++] = upper_breakpoint;
+                            breakpoints[num_breakpoints++] = max_distance;
                         }
-                    }
 
-                    {
-                        /* Perform adaptive integration. Stop when a relative
-                         * accuracy of 0.05 has been reached. */
-                        inner_integrand_params integrand_params = {A, B, log_offset, prior_distance_power};
-                        const gsl_function func = {radial_integrand, &integrand_params};
-                        double result, abserr;
-                        int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, workspace, &result, &abserr);
-
-                        /* If the integrator failed, then record the GSL error
-                         * value for later reporting when we leave the parallel
-                         * section. Then, break out of the loop. */
-                        if (ret != GSL_SUCCESS)
                         {
-                            gsl_errno = ret;
-                            gsl_integration_workspace_free(workspace);
-                            goto skip;
+                            /*
+                             * Set log_offset to the maximum of the logarithm of the
+                             * radial integrand evaluated at all of the breakpoints. */
+                            int ibreakpoint;
+                            for (ibreakpoint = 0; ibreakpoint < num_breakpoints; ibreakpoint++)
+                            {
+                                const double new_log_offset = log_radial_integrand(
+                                    breakpoints[ibreakpoint], A, B, prior_distance_power);
+                                if (new_log_offset < INFINITY && new_log_offset > log_offset)
+                                    log_offset = new_log_offset;
+                            }
                         }
 
-                        /* Take the logarithm and put the log-normalization back in. */
-                        result = log(result) + integrand_params.log_offset + accum1;
+                        {
+                            /* Perform adaptive integration. Stop when a relative
+                             * accuracy of 0.05 has been reached. */
+                            inner_integrand_params integrand_params = {A, B, log_offset, prior_distance_power};
+                            const gsl_function func = {radial_integrand, &integrand_params};
+                            double result, abserr;
+                            int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, workspace, &result, &abserr);
 
-                        /* Accumulate result. */
-                        accum = logaddexp(accum, result);
+                            /* If the integrator failed, then record the GSL error
+                             * value for later reporting when we leave the parallel
+                             * section. Then, break out of the loop. */
+                            if (ret != GSL_SUCCESS)
+                            {
+                                gsl_errno = ret;
+                                gsl_integration_workspace_free(workspace);
+                                goto skip;
+                            }
+
+                            /* Take the logarithm and put the log-normalization back in. */
+                            result = log(result) + integrand_params.log_offset + accum1;
+
+                            /* Accumulate result. */
+                            accum = logaddexp(accum, result);
+                        }
                     }
                 }
-            }
-            /* Discard workspace for adaptive integrator. */
-            gsl_integration_workspace_free(workspace);
+                /* Discard workspace for adaptive integrator. */
+                gsl_integration_workspace_free(workspace);
 
-            /* Store log posterior. */
-            P[ipix] = accum;
+                /* Store log posterior. */
+                P_[i] = accum;
+            }
+
+            skip: /* this statement intentionally left blank */;
         }
 
-        skip: /* this statement intentionally left blank */;
+        /* Restore old error handler. */
+        gsl_set_error_handler(old_handler);
     }
-
-    /* Restore old error handler. */
-    gsl_set_error_handler(old_handler);
-
-    /* Free permutation. */
-    gsl_permutation_free(pix_perm);
 
     /* Check if there was an error in any thread evaluating any pixel. If there
      * was, raise the error and return. */
@@ -939,6 +947,10 @@ double *bayestar_sky_map_toa_phoa_snr(
         free(P);
         GSL_ERROR_NULL(gsl_strerror(gsl_errno), gsl_errno);
     }
+
+    /* Copy back integrator results in HEALPix pixel index. */
+    for (i = 0; i < maxpix; i ++)
+        P[ipixes_[i]] = P_[i];
 
     /* Exponentiate and normalize posterior. */
     pix_perm = get_pixel_ranks(*npix, P);
