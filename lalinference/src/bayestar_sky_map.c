@@ -80,6 +80,9 @@
 
 #include <chealpix.h>
 
+/* I don't make mistakes. */
+#define GSL_RANGE_CHECK_OFF
+
 #include <gsl/gsl_cblas.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_integration.h>
