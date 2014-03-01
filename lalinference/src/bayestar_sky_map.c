@@ -87,7 +87,7 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_integration.h>
 #include <gsl/gsl_sf_bessel.h>
-#include <gsl/gsl_sort_vector_double.h>
+#include <gsl/gsl_sort_double.h>
 #include <gsl/gsl_statistics_double.h>
 #include <gsl/gsl_vector.h>
 
@@ -105,27 +105,33 @@ my_gsl_error (const char * reason, const char * file, int line, int gsl_errno)
 
 
 /* Return indices of sorted pixels from greatest to smallest. */
-static gsl_permutation *get_pixel_ranks(long npix, double *P)
+static size_t *get_pixel_ranks(long npix, const double *P)
 {
-    gsl_permutation *pix_perm = gsl_permutation_alloc(npix);
-    if (pix_perm)
-    {
-        gsl_vector_view P_vector = gsl_vector_view_array(P, npix);
-        gsl_sort_vector_index(pix_perm, &P_vector.vector);
-        gsl_permutation_reverse(pix_perm);
-    }
+    size_t i;
+    size_t *pix_perm = malloc(sizeof(P[0]) * npix);
+    if (!pix_perm)
+        GSL_ERROR_NULL("unable to allocate permutation", GSL_ENOMEM);
+
+    /* Argsort pixels. */
+    gsl_sort_index(pix_perm, P, 1, npix);
+
+    /* Put in reverse order. */
+    for (i = 0; i < npix / 2; i ++)
+        pix_perm[i] = pix_perm[npix - i - 1];
+
+    /* Done. */
     return pix_perm;
 }
 
 
 /* Exponentiate and normalize a log probability sky map. */
-static void exp_normalize(long npix, double *P, gsl_permutation *pix_perm)
+static void exp_normalize(long npix, double *P, size_t *pix_perm)
 {
     long i;
     double accum, max_log_p;
 
     /* Find the value of the greatest log probability. */
-    max_log_p = P[gsl_permutation_get(pix_perm, 0)];
+    max_log_p = P[pix_perm[0]];
 
     /* Subtract it off. */
     for (i = 0; i < npix; i ++)
@@ -137,7 +143,7 @@ static void exp_normalize(long npix, double *P, gsl_permutation *pix_perm)
 
     /* Sum entire sky map to find normalization. */
     for (accum = 0, i = 0; i < npix; i ++)
-        accum += P[gsl_permutation_get(pix_perm, i)];
+        accum += P[pix_perm[i]];
 
     /* Normalize. */
     for (i = 0; i < npix; i ++)
@@ -145,13 +151,13 @@ static void exp_normalize(long npix, double *P, gsl_permutation *pix_perm)
 }
 
 
-static long indexof_confidence_level(long npix, double *P, double level, gsl_permutation *pix_perm)
+static long indexof_confidence_level(long npix, double *P, double level, size_t *pix_perm)
 {
     double accum;
     long maxpix;
 
     for (accum = 0, maxpix = 0; maxpix < npix && accum <= level; maxpix ++)
-        accum += P[gsl_permutation_get(pix_perm, maxpix)];
+        accum += P[pix_perm[maxpix]];
 
     return maxpix;
 }
@@ -236,7 +242,7 @@ static const long autoresolution_count_pix_toa_phoa_snr = 12288;
 
 /* Perform sky localization based on TDOAs alone. */
 static double *bayestar_sky_map_toa_adapt_resolution(
-    gsl_permutation **pix_perm,
+    size_t **pix_perm,
     long *maxpix,
     long *npix, /* In/out: number of HEALPix pixels. */
     double gmst, /* Greenwich mean sidereal time in radians. */
@@ -250,7 +256,7 @@ static double *bayestar_sky_map_toa_adapt_resolution(
     double *P = NULL;
     long my_npix = *npix;
     long my_maxpix = *npix;
-    gsl_permutation *my_pix_perm = NULL;
+    size_t *my_pix_perm = NULL;
 
     if (my_npix == -1)
     {
@@ -259,7 +265,7 @@ static double *bayestar_sky_map_toa_adapt_resolution(
             my_npix *= 4;
 
             free(P);
-            gsl_permutation_free(my_pix_perm);
+            free(my_pix_perm);
 
             P = malloc(my_npix * sizeof(double));
             if (!P)
@@ -363,9 +369,9 @@ double *bayestar_sky_map_toa(
     const double *w_toas /* Input: sum-of-squares weights, (1/TOA variance)^2. */
 ) {
     long maxpix;
-    gsl_permutation *pix_perm = NULL;
+    size_t *pix_perm = NULL;
     double *ret = bayestar_sky_map_toa_adapt_resolution(&pix_perm, &maxpix, npix, gmst, nifos, locs, toas, w_toas, autoresolution_count_pix_toa_snr);
-    gsl_permutation_free(pix_perm);
+    free(pix_perm);
     return ret;
 }
 
@@ -389,7 +395,7 @@ double *bayestar_sky_map_toa_snr(
     long i;
     double d1[nifos];
     double *P;
-    gsl_permutation *pix_perm;
+    size_t *pix_perm;
 
     /* Hold GSL return values for any thread that fails. */
     int gsl_errno = GSL_SUCCESS;
@@ -434,12 +440,12 @@ double *bayestar_sky_map_toa_snr(
     /* Zero pixels that didn't meet the TDOA cut. */
     for (i = 0; i < maxpix; i ++)
     {
-        long ipix = gsl_permutation_get(pix_perm, i);
+        long ipix = pix_perm[i];
         P[ipix] = log(P[ipix]);
     }
     for (; i < *npix; i ++)
     {
-        long ipix = gsl_permutation_get(pix_perm, i);
+        long ipix = pix_perm[i];
         P[ipix] = -INFINITY;
     }
 
@@ -469,7 +475,7 @@ double *bayestar_sky_map_toa_snr(
             goto skip;
 
         {
-            long ipix = gsl_permutation_get(pix_perm, i);
+            long ipix = pix_perm[i];
             double F[nifos][2];
             double theta, phi;
             int itwopsi, iu, iifo;
@@ -624,7 +630,7 @@ double *bayestar_sky_map_toa_snr(
     gsl_set_error_handler(old_handler);
 
     /* Free permutation. */
-    gsl_permutation_free(pix_perm);
+    free(pix_perm);
 
     /* Check if there was an error in any thread evaluating any pixel. If there
      * was, raise the error and return. */
@@ -642,7 +648,7 @@ double *bayestar_sky_map_toa_snr(
         return NULL;
     }
     exp_normalize(*npix, P, pix_perm);
-    gsl_permutation_free(pix_perm);
+    free(pix_perm);
 
     return P;
 }
@@ -676,7 +682,7 @@ double *bayestar_sky_map_toa_phoa_snr(
     long i;
     double d1[nifos];
     double *P;
-    gsl_permutation *pix_perm;
+    size_t *pix_perm;
     double complex exp_i_phoas[nifos];
 
     /* Hold GSL return values for any thread that fails. */
@@ -727,7 +733,7 @@ double *bayestar_sky_map_toa_phoa_snr(
     /* Zero all pixels that didn't meet the TDOA cut. */
     for (i = maxpix; i < *npix; i ++)
     {
-        long ipix = gsl_permutation_get(pix_perm, i);
+        long ipix = pix_perm[i];
         P[ipix] = -INFINITY;
     }
 
@@ -736,11 +742,11 @@ double *bayestar_sky_map_toa_phoa_snr(
 
     for (i = 0; i < maxpix; i ++)
     {
-        ipixes_[i] = gsl_permutation_get(pix_perm, i);
+        ipixes_[i] = pix_perm[i];
     }
 
     /* Free permutation. */
-    gsl_permutation_free(pix_perm);
+    free(pix_perm);
 
     /* Divide OpenMP loop amongst all MICs and the host.
      * There are nmics MICs attached.
@@ -997,7 +1003,7 @@ double *bayestar_sky_map_toa_phoa_snr(
         return NULL;
     }
     exp_normalize(*npix, P, pix_perm);
-    gsl_permutation_free(pix_perm);
+    free(pix_perm);
 
     return P;
 }
