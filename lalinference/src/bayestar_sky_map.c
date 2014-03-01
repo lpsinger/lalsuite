@@ -116,7 +116,12 @@ static size_t *get_pixel_ranks(long npix, const double *P)
 
     /* Put in reverse order. */
     for (i = 0; i < npix / 2; i ++)
-        pix_perm[i] = pix_perm[npix - i - 1];
+    {
+        size_t j = npix - i - 1;
+        size_t tmp = pix_perm[i];
+        pix_perm[i] = pix_perm[j];
+        pix_perm[j] = tmp;
+    }
 
     /* Done. */
     return pix_perm;
