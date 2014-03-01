@@ -89,7 +89,6 @@
 #include <gsl/gsl_sf_bessel.h>
 #include <gsl/gsl_sort_double.h>
 #include <gsl/gsl_statistics_double.h>
-#include <gsl/gsl_vector.h>
 
 #include "logaddexp.h"
 
@@ -164,18 +163,29 @@ static long indexof_confidence_level(long npix, double *P, double level, size_t 
 
 
 /* Find error in time of arrival. */
-static double toa_error(
+static void toa_errors(
+    double dt[],
     double theta,
     double phi,
     double gmst,
-    const double *loc, /* Input: detector position. */
-    double toa /* Input: time of arrival. */
+    int nifos, /* Input: number of detectors. */
+    const double locs[][3], /* Input: array of detector positions. */
+    const double toas[] /* Input: array of times of arrival. */
 ) {
     /* Convert to Cartesian coordinates. */
     double n[3];
     ang2vec(theta, phi - gmst, n);
 
-    return toa + cblas_ddot(3, n, 1, loc, 1) / LAL_C_SI;
+    int i, j;
+    for (i = 0; i < nifos; i ++)
+    {
+        double dot;
+        for (dot = 0, j = 0; j < 3; j ++)
+        {
+            dot += locs[i][j] * n[j];
+        }
+        dt[i] = toas[i] + dot / LAL_C_SI;
+    }
 }
 
 
@@ -189,14 +199,8 @@ static double bayestar_log_posterior_toa(
     const double *toas, /* Input: array of times of arrival. */
     const double *w_toas /* Input: sum-of-squares weights, (1/TOA variance)^2. */
 ) {
-    int iifo;
-
-    /* Loop over detectors. */
     double dt[nifos];
-    for (iifo = 0; iifo < nifos; iifo ++)
-        dt[iifo] = toa_error(theta, phi, gmst, locs[iifo], toas[iifo]);
-
-    /* Evaluate the (un-normalized) Gaussian log likelihood. */
+    toa_errors(dt, theta, phi, gmst, nifos, locs, toas);
     return -0.5 * gsl_stats_wtss(w_toas, 1, dt, 1, nifos);
 }
 
@@ -444,10 +448,7 @@ double *bayestar_sky_map_toa_snr(
         P[ipix] = log(P[ipix]);
     }
     for (; i < *npix; i ++)
-    {
-        long ipix = pix_perm[i];
-        P[ipix] = -INFINITY;
-    }
+        P[pix_perm[i]] = -INFINITY;
 
     /* Use our own error handler while in parallel section to avoid concurrent
      * calls to the GSL error handler, which if provided by the user may not
@@ -480,18 +481,6 @@ double *bayestar_sky_map_toa_snr(
             double theta, phi;
             int itwopsi, iu, iifo;
             double accum = -INFINITY;
-
-            /* Prepare workspace for adaptive integrator. */
-            gsl_integration_workspace *workspace = gsl_integration_workspace_alloc(subdivision_limit);
-
-            /* If the workspace could not be allocated, then record the GSL
-             * error value for later reporting when we leave the parallel
-             * section. Then, skip to the next loop iteration. */
-            if (!workspace)
-            {
-                gsl_errno = GSL_ENOMEM;
-                goto skip;
-            }
 
             /* Look up polar coordinates of this pixel */
             pix2ang_ring(nside, ipix, &theta, &phi);
@@ -595,8 +584,23 @@ double *bayestar_sky_map_toa_snr(
                          * accuracy of 0.05 has been reached. */
                         inner_integrand_params integrand_params = {A, B, log_offset, prior_distance_power};
                         const gsl_function func = {radial_integrand, &integrand_params};
+                        double alist[subdivision_limit];
+                        double blist[subdivision_limit];
+                        double rlist[subdivision_limit];
+                        double elist[subdivision_limit];
+                        size_t order[subdivision_limit];
+                        size_t level[subdivision_limit];
+                        gsl_integration_workspace workspace = {
+                            .limit = subdivision_limit,
+                            .alist = alist,
+                            .blist = blist,
+                            .rlist = rlist,
+                            .elist = elist,
+                            .order = order,
+                            .level = level
+                        };
                         double result, abserr;
-                        int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, workspace, &result, &abserr);
+                        int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, &workspace, &result, &abserr);
 
                         /* If the integrator failed, then record the GSL error
                          * value for later reporting when we leave the parallel
@@ -604,7 +608,6 @@ double *bayestar_sky_map_toa_snr(
                         if (ret != GSL_SUCCESS)
                         {
                             gsl_errno = ret;
-                            gsl_integration_workspace_free(workspace);
                             goto skip;
                         }
 
@@ -616,8 +619,6 @@ double *bayestar_sky_map_toa_snr(
                     }
                 }
             }
-            /* Discard workspace for adaptive integrator. */
-            gsl_integration_workspace_free(workspace);
 
             /* Accumulate (log) posterior terms for SNR and TDOA. */
             P[ipix] += accum;
@@ -732,21 +733,9 @@ double *bayestar_sky_map_toa_phoa_snr(
 
     /* Zero all pixels that didn't meet the TDOA cut. */
     for (i = maxpix; i < *npix; i ++)
-    {
-        long ipix = pix_perm[i];
-        P[ipix] = -INFINITY;
-    }
+        P[pix_perm[i]] = -INFINITY;
 
-    long ipixes_[maxpix];
     double P_[maxpix];
-
-    for (i = 0; i < maxpix; i ++)
-    {
-        ipixes_[i] = pix_perm[i];
-    }
-
-    /* Free permutation. */
-    free(pix_perm);
 
     /* Divide OpenMP loop amongst all MICs and the host.
      * There are nmics MICs attached.
@@ -766,7 +755,7 @@ double *bayestar_sky_map_toa_phoa_snr(
             target(mic:imic) \
             in(locations, responses, toas, phoas, snrs, w_toas, w1s, w2s, \
                horizons, d1, exp_i_phoas: length(nifos)) \
-            in(ipixes_[imin:chunksize]) \
+            in(pix_perm[imin:chunksize]) \
             out(P_[imin:chunksize]) \
             signal(&sig[imic])
         {
@@ -796,7 +785,6 @@ double *bayestar_sky_map_toa_phoa_snr(
                     goto skip;
 
                 {
-                    long ipix = ipixes_[i];
                     double complex F[nifos];
                     double theta, phi;
                     int itwopsi, iu, it, iifo;
@@ -804,26 +792,12 @@ double *bayestar_sky_map_toa_phoa_snr(
                     double complex exp_i_toaphoa[nifos];
                     double dtau[nifos], mean_dtau;
 
-                    /* Prepare workspace for adaptive integrator. */
-                    gsl_integration_workspace *workspace = gsl_integration_workspace_alloc(subdivision_limit);
-
-                    /* If the workspace could not be allocated, then record the GSL
-                     * error value for later reporting when we leave the parallel
-                     * section. Then, skip to the next loop iteration. */
-                    if (!workspace)
-                    {
-                       gsl_errno = GSL_ENOMEM;
-                       goto skip;
-                    }
-
                     /* Look up polar coordinates of this pixel */
-                    pix2ang_ring(nside, ipix, &theta, &phi);
+                    pix2ang_ring(nside, pix_perm[i], &theta, &phi);
 
+                    toa_errors(dtau, theta, phi, gmst, nifos, locations, toas);
                     for (iifo = 0; iifo < nifos; iifo ++)
-                    {
-                        dtau[iifo] = toa_error(theta, phi, gmst, locations[iifo], toas[iifo]);
                         exp_i_toaphoa[iifo] = exp_i_phoas[iifo] * exp_i(w1s[iifo] * dtau[iifo]);
-                    }
 
                     /* Find mean arrival time error */
                     mean_dtau = gsl_stats_wmean(w_toas, 1, dtau, 1, nifos);
@@ -941,8 +915,23 @@ double *bayestar_sky_map_toa_phoa_snr(
                                  * accuracy of 0.05 has been reached. */
                                 inner_integrand_params integrand_params = {A, B, log_offset, prior_distance_power};
                                 const gsl_function func = {radial_integrand, &integrand_params};
+                                double alist[subdivision_limit];
+                                double blist[subdivision_limit];
+                                double rlist[subdivision_limit];
+                                double elist[subdivision_limit];
+                                size_t order[subdivision_limit];
+                                size_t level[subdivision_limit];
+                                gsl_integration_workspace workspace = {
+                                    .limit = subdivision_limit,
+                                    .alist = alist,
+                                    .blist = blist,
+                                    .rlist = rlist,
+                                    .elist = elist,
+                                    .order = order,
+                                    .level = level
+                                };
                                 double result, abserr;
-                                int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, workspace, &result, &abserr);
+                                int ret = gsl_integration_qagp(&func, &breakpoints[0], num_breakpoints, DBL_MIN, 0.05, subdivision_limit, &workspace, &result, &abserr);
 
                                 /* If the integrator failed, then record the GSL error
                                  * value for later reporting when we leave the parallel
@@ -950,7 +939,6 @@ double *bayestar_sky_map_toa_phoa_snr(
                                 if (ret != GSL_SUCCESS)
                                 {
                                     gsl_errno = ret;
-                                    gsl_integration_workspace_free(workspace);
                                     goto skip;
                                 }
 
@@ -962,8 +950,6 @@ double *bayestar_sky_map_toa_phoa_snr(
                             }
                         }
                     }
-                    /* Discard workspace for adaptive integrator. */
-                    gsl_integration_workspace_free(workspace);
 
                     /* Store log posterior. */
                     P_[i] = accum;
@@ -985,7 +971,9 @@ double *bayestar_sky_map_toa_phoa_snr(
 
     /* Copy back integrator results in HEALPix pixel index. */
     for (i = 0; i < maxpix; i ++)
-        P[ipixes_[i]] = P_[i];
+        P[pix_perm[i]] = P_[i];
+
+    free(pix_perm);
 
     /* Check if there was an error in any thread evaluating any pixel. If there
      * was, raise the error and return. */
