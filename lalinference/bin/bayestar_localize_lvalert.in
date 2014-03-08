@@ -49,13 +49,6 @@ __author__ = "Leo Singer <leo.singer@ligo.org>"
 
 
 #
-# Start warming up the Xeon Phi coprocessors
-#
-
-import lalinference.bayestar.warmup
-
-
-#
 # Command line interface
 #
 
@@ -121,6 +114,14 @@ from lalinference.bayestar import fits
 
 # A little bit of Cylon humor
 log.info('by your command...')
+
+#
+# Start warming up the Xeon Phi coprocessors
+#
+
+log.info('warming up Xeon Phi coprocessors')
+import lalinference.bayestar.warmup
+
 
 try:
     # download coinc.xml
