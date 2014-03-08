@@ -44,6 +44,7 @@ log.warn("this is a warning")
 # module itself.g
 
 logging = __import__('logging', level=0)
+import threading
 
 class GraceDbLogStream(object):
     def __init__(self, gracedb, graceid):
@@ -52,7 +53,11 @@ class GraceDbLogStream(object):
     def flush(self):
         pass
     def write(self, text):
-        self.gracedb.writeLog(self.graceid, text)
+        # Write to log on separate thread
+        threading.Thread(
+            target=self.gracedb.writeLog,
+            args=(self.graceid, text)
+        ).start()
  
 class GraceDbLogFormatter(logging.Formatter):
     def __init__(self):
