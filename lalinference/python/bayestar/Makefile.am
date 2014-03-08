@@ -12,7 +12,8 @@ bayestar_PYTHON = \
 	ligolw_sky_map.py \
 	postprocess.py \
 	plot.py \
-	timing.py
+	timing.py \
+	warmup.py
 
 dist_bayestar_DATA = \
 	ne_simplified_coastline.json

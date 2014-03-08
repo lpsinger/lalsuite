@@ -28,6 +28,7 @@ from . import filter
 from . import postprocess
 from . import timing
 from . import sky_map
+from . import warmup
 import lal, lalsimulation
 
 
@@ -116,6 +117,9 @@ def ligolw_sky_map(sngl_inspirals, approximant, amplitude_order, phase_order, f_
     if min_distance == 0 and prior_distance_power < 0:
         raise ValueError(("Prior is a power law r^k with k={}, "
             + "undefined at min_distance=0").format(prior_distance_power))
+
+    # Wait until the Xeon Phi coprocessors are done warming up.
+    warmup.finish()
 
     # Time and run sky localization.
     start_time = time.time()

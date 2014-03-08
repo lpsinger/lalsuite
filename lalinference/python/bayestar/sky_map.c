@@ -65,6 +65,7 @@ static PyObject *premalloced_new(void *data)
     return (PyObject *) obj;
 }
 
+PyThreadState *saved_state = NULL;
 
 static void
 my_gsl_error (const char * reason, const char * file, int line, int gsl_errno)
@@ -82,7 +83,10 @@ my_gsl_error (const char * reason, const char * file, int line, int gsl_errno)
             exception_type = PyExc_ArithmeticError;
             break;
     }
+
+    PyEval_RestoreThread(saved_state);
     PyErr_Format(exception_type, "%s:%d: %s\n", file, line, reason);
+    saved_state = PyEval_SaveThread();
 }
 
 
@@ -161,7 +165,11 @@ static PyObject *sky_map_toa(PyObject *module, PyObject *args, PyObject *kwargs)
     locations = PyArray_DATA(locations_npy);
 
     old_handler = gsl_set_error_handler(my_gsl_error);
+    Py_BEGIN_ALLOW_THREADS
+    saved_state = _save;
     P = bayestar_sky_map_toa(&npix, gmst, nifos, locations, toas, w_toas);
+    _save = saved_state;
+    Py_END_ALLOW_THREADS
     gsl_set_error_handler(old_handler);
 
     if (!P)
@@ -311,7 +319,11 @@ static PyObject *sky_map_toa_snr(PyObject *module, PyObject *args, PyObject *kwa
     horizons = PyArray_DATA(horizons_npy);
 
     old_handler = gsl_set_error_handler(my_gsl_error);
+    Py_BEGIN_ALLOW_THREADS
+    saved_state = _save;
     P = bayestar_sky_map_toa_snr(&npix, gmst, nifos, responses, locations, toas, snrs, w_toas, horizons, min_distance, max_distance, prior_distance_power);
+    _save = saved_state;
+    Py_END_ALLOW_THREADS
     gsl_set_error_handler(old_handler);
 
     if (!P)
@@ -496,7 +508,11 @@ static PyObject *sky_map_toa_phoa_snr(PyObject *module, PyObject *args, PyObject
     horizons = PyArray_DATA(horizons_npy);
 
     old_handler = gsl_set_error_handler(my_gsl_error);
+    Py_BEGIN_ALLOW_THREADS
+    saved_state = _save;
     P = bayestar_sky_map_toa_phoa_snr(&npix, gmst, nifos, responses, locations, toas, phoas, snrs, w_toas, w1s, w2s, horizons, min_distance, max_distance, prior_distance_power);
+    _save = saved_state;
+    Py_END_ALLOW_THREADS
     gsl_set_error_handler(old_handler);
 
     if (!P)

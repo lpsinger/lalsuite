@@ -49,6 +49,13 @@ __author__ = "Leo Singer <leo.singer@ligo.org>"
 
 
 #
+# Start warming up the Xeon Phi coprocessors
+#
+
+import lalinference.bayestar.warmup
+
+
+#
 # Command line interface
 #
 
