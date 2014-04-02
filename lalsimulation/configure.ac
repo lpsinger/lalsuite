@@ -97,6 +97,18 @@ AC_CHECK_LIB([m],[main],,[AC_MSG_ERROR([could not find the math library])])
 # check for OpenMP
 AC_OPENMP
 
+# Check for POSIX threads
+AX_PTHREAD(
+  [
+    LIBS="$PTHREAD_LIBS $LIBS"
+    CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+    CC="$PTHREAD_CC"
+  ],
+  [
+    AC_MSG_ERROR([could not find the POSIX threads library])
+  ]
+)
+
 # check for gsl
 PKG_CHECK_MODULES([GSL],[gsl],[true],[false])
 LALSUITE_ADD_FLAGS([C],[${GSL_CFLAGS}],[${GSL_LIBS}])
@@ -156,6 +168,7 @@ LALSimulation has now been successfully configured:
 * SWIG wrapping module for Octave is $SWIG_OCTAVE_ENABLE_VAL
 * SWIG wrapping module for Python is $SWIG_PYTHON_ENABLE_VAL
 * OpenMP acceleration is $OPENMP_ENABLE_VAL
+* POSIX threads (pthreads) are $PTHREAD_ENABLE_VAL
 
 and will be installed under the directory:
 

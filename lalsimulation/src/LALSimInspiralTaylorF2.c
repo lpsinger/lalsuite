@@ -23,8 +23,10 @@
  *  MA  02111-1307  USA
  */
 
+#include <pthread.h>
 #include <stdlib.h>
 #include <math.h>
+#include <gsl/gsl_math.h>
 #include <lal/Date.h>
 #include <lal/FrequencySeries.h>
 #include <lal/LALConstants.h>
@@ -56,6 +58,113 @@ int XLALSimInspiralTaylorF2Phasing(
     *pn = pfa;
 
     return XLAL_SUCCESS;
+}
+
+
+typedef struct {
+    REAL8 cbrt_f, log_cbrt_f;
+} pn_accelerator_terms_t;
+
+typedef struct {
+    REAL8 deltaF;
+    size_t n;
+    pn_accelerator_terms_t terms[];
+} pn_accelerator_t;
+
+static pthread_rwlock_t pn_accelerator_lock = PTHREAD_RWLOCK_INITIALIZER;
+static pn_accelerator_t *pn_accelerator = NULL;
+
+static void save_accelerator(const pn_accelerator_t *acc)
+{
+   /* Failure to allocate memory or acquire lock is non-fatal,
+    * but results in diminished speedup. */
+
+    const size_t acc_size = sizeof(pn_accelerator_t)
+        + acc->n * sizeof(pn_accelerator_terms_t);
+    pn_accelerator_t *new_acc = malloc(acc_size);
+
+    if (new_acc)
+    {
+        memcpy(new_acc, acc, acc_size);
+        if (!pthread_rwlock_wrlock(&pn_accelerator_lock))
+        {
+            /* Lock acquired:
+             * discard old accelerator,
+             * save copy of new one,
+             * then release lock */
+            free(pn_accelerator);
+            pn_accelerator = new_acc;
+            pthread_rwlock_unlock(&pn_accelerator_lock);
+        } else {
+            /* Lock acquisition failed:
+             * discard copy of new accelerator */
+            free(new_acc);
+        }
+    }
+}
+
+static pn_accelerator_t *cached_accelerator(REAL8 deltaF, size_t n)
+{
+    /* Failure to allocate memory is fatal. */
+    const size_t acc_size = sizeof(pn_accelerator_t)
+        + n * sizeof(pn_accelerator_terms_t);
+    pn_accelerator_t *acc = malloc(acc_size);
+
+    if (acc)
+    {
+       /* Failure to acquire lock is non-fatal,
+        * but results in diminished speedup. */
+
+       if (!pthread_rwlock_rdlock(&pn_accelerator_lock))
+       {
+           /* Lock acquired:
+            * if sample rate matches, copy part of old accelerator;
+            * then release lock */
+           if (pn_accelerator && pn_accelerator->deltaF == deltaF)
+           {
+               memcpy(acc, pn_accelerator,
+                   sizeof(*acc) + GSL_MIN(pn_accelerator->n, n) * sizeof(*acc->terms));
+           } else {
+               acc->deltaF = deltaF;
+               acc->n = 0;
+           }
+           pthread_rwlock_unlock(&pn_accelerator_lock);
+       } else {
+           /* Lock acquisition failed */
+           acc->deltaF = deltaF;
+           acc->n = n;
+       }
+    }
+
+    return acc;
+}
+
+static pn_accelerator_t *get_accelerator(REAL8 deltaF, size_t n)
+{
+    pn_accelerator_t *acc = cached_accelerator(deltaF, n);
+
+    if (acc->n >= n)
+    {
+        /* Cached accelerator already contains enough terms; just re-use it. */
+        acc->n = n;
+    } else {
+        /* Cached accelerator does not yet contain enough terms. */
+        size_t i;
+
+        #pragma omp parallel for
+        for (i = acc->n; i < n; i ++) {
+            const REAL8 f = i * deltaF;
+            const REAL8 cbrt_f = cbrt(f);
+            const REAL8 log_cbrt_f = log(cbrt_f);
+            acc->terms[i].cbrt_f = cbrt_f;
+            acc->terms[i].log_cbrt_f = log_cbrt_f;
+        }
+        acc->n = n;
+
+        save_accelerator(acc);
+    }
+
+    return acc;
 }
 
 
@@ -288,11 +397,18 @@ int XLALSimInspiralTaylorF2(
     iStart = (size_t) ceil(fStart / deltaF);
     data = htilde->data->data;
 
+    pn_accelerator_t *acc = get_accelerator(deltaF, n);
+    if (!acc)
+        XLAL_ERROR(XLAL_ENOMEM, "Failed to allocate PN accelerator");
+
+    const REAL8 cbrt_piM = cbrt(piM);
+    const REAL8 log_cbrt_piM = log(cbrt_piM);
+
     #pragma omp parallel for
     for (i = iStart; i < n; i++) {
         const REAL8 f = i * deltaF;
-        const REAL8 v = cbrt(piM*f);
-        const REAL8 logv = log(v);
+        const REAL8 v = cbrt_piM * acc->terms[i].cbrt_f;
+        const REAL8 logv = log_cbrt_piM + acc->terms[i].log_cbrt_f;
         const REAL8 v2 = v * v;
         const REAL8 v3 = v * v2;
         const REAL8 v4 = v * v3;
@@ -389,6 +505,7 @@ int XLALSimInspiralTaylorF2(
                 - amp * sin(phasing - LAL_PI_4) * 1.0j;
     }
 
+    free(acc);
     *htilde_out = htilde;
     return XLAL_SUCCESS;
 }
