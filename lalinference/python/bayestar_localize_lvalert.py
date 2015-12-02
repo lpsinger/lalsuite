@@ -149,7 +149,8 @@ try:
 
     # perform sky localization
     log.info("starting sky localization")
-    sky_map, epoch, elapsed_time, instruments = gracedb_sky_map(
+    sky_map, log_bayes_factor, epoch, elapsed_time, instruments = \
+        gracedb_sky_map(
         coinc_file, psd_file, opts.waveform, opts.f_low,
         opts.min_distance, opts.max_distance, opts.prior_distance_power,
         phase_convention=opts.phase_convention, nside=opts.nside,
@@ -165,7 +166,7 @@ try:
             creator=parser.prog, objid=str(graceid),
             url='https://gracedb.ligo.org/events/{0}'.format(graceid),
             runtime=elapsed_time, instruments=instruments,
-            origin='LIGO/Virgo', nest=True)
+            origin='LIGO/Virgo', nest=True, log_bayes_factor=log_bayes_factor)
         if not opts.dry_run:
             gracedb.writeLog(graceid, "INFO:BAYESTAR:uploaded sky map",
                 filename=fitspath, tagname=("sky_loc", "lvem"))

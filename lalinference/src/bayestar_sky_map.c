@@ -565,15 +565,10 @@ double log_radial_integrator_eval(const log_radial_integrator *integrator, doubl
     if (p == 0) {
         /* note: p2 == 0 implies b == 0 */
         assert(b == 0);
+        result = 0;
+    } else {
         int k1 = integrator->k + 1;
 
-        if (k1 == 0)
-        {
-            result = log(log(integrator->r2 / integrator->r1));
-        } else {
-            result = log((gsl_pow_int(integrator->r2, k1) - gsl_pow_int(integrator->r1, k1)) / k1);
-        }
-    } else {
         if (y >= integrator->ymax) {
             result = cubic_interp_eval(integrator->region1, x);
         } else {
@@ -587,6 +582,14 @@ double log_radial_integrator_eval(const log_radial_integrator *integrator, doubl
             }
         }
         result += gsl_pow_2(0.5 * b / p);
+
+        /* Normalize distance prior */
+        if (k1 == 0)
+        {
+            result -= log(log(integrator->r2 / integrator->r1));
+        } else {
+            result -= log((gsl_pow_int(integrator->r2, k1) - gsl_pow_int(integrator->r1, k1)) / k1);
+        }
     }
 
     return result;
@@ -779,7 +782,7 @@ static const double M_LN4 = 2 * M_LN2;
 static const double M_1_LN4 = 0.5 / M_LN2;
 
 
-static double *adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix)
+static double *adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix, double *log_bayes_factor)
 {
     const unsigned char order = map->max_order;
     const unsigned long nside = (unsigned long)1 << order;
@@ -808,6 +811,8 @@ static double *adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix)
             break; /* We have reached underflow. */
         norm += dP;
     }
+    if (log_bayes_factor)
+        *log_bayes_factor = log(norm) + M_LN4 * (max_log4p - order);
     norm = 1 / norm;
     for (ssize_t i = (ssize_t)map->len - 1; i >= 0; i --)
     {
@@ -827,6 +832,7 @@ static double *adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix)
 
 double *bayestar_sky_map_toa_phoa_snr(
     long *inout_npix,
+    double *out_log_bayes_factor,
     /* Prior */
     double min_distance,            /* Minimum distance */
     double max_distance,            /* Maximum distance */
@@ -976,6 +982,19 @@ double *bayestar_sky_map_toa_phoa_snr(
                 accum = logaddexp(accum, accum1);
             }
 
+            #if 0
+            /* Multiply by dtwopsi dt.
+             * The dr dcosi terms have already been included implicitly. */
+            accum += log((2 * M_PI) / (ntwopsi * sample_rate));
+
+            /* Normalize prior on cosi, tearth, phic, twopsi.
+             * The prior on r has already been included. */
+            accum -= log(2 * (2 * nsamples - 1) / sample_rate * (2 * M_PI) * (2 * M_PI));
+            #endif
+
+            /* Equivalent to: */
+            accum -= log(2 * ntwopsi * (2 * nsamples - 1) * (2 * M_PI));
+
             /* Record logarithm base 4 of posterior. */
             pixel->log4p = M_1_LN4 * accum;
         }
@@ -1003,7 +1022,7 @@ double *bayestar_sky_map_toa_phoa_snr(
     old_handler = gsl_set_error_handler(ignore_underflow);
 
     /* Flatten sky map to an image. */
-    double *P = adaptive_sky_map_rasterize(map, inout_npix);
+    double *P = adaptive_sky_map_rasterize(map, inout_npix, out_log_bayes_factor);
     free(map);
 
     /* Restore old error handler. */

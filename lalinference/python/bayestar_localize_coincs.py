@@ -184,7 +184,8 @@ for coinc, sngl_inspirals in ligolw_bayestar.coinc_and_sngl_inspirals_for_xmldoc
         else:
             chain_dump = None
         try:
-            sky_map, epoch, elapsed_time = ligolw_sky_map.ligolw_sky_map(
+            sky_map, log_bayes_factor, epoch, elapsed_time = \
+                ligolw_sky_map.ligolw_sky_map(
                 sngl_inspirals, opts.waveform, opts.f_low, opts.min_distance,
                 opts.max_distance, opts.prior_distance_power, psds=psds,
                 method=method, nside=opts.nside, chain_dump=chain_dump,
@@ -199,7 +200,7 @@ for coinc, sngl_inspirals in ligolw_bayestar.coinc_and_sngl_inspirals_for_xmldoc
             fits.write_sky_map('%s.%s.fits.gz' % (int(coinc.coinc_event_id), method),
                 sky_map, objid=str(coinc.coinc_event_id), gps_time=float(epoch),
                 creator=parser.prog, runtime=elapsed_time,
-                instruments=instruments, nest=True)
+                instruments=instruments, nest=True, log_bayes_factor=log_bayes_factor)
 
 
 if count_sky_maps_failed > 0:

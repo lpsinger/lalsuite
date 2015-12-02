@@ -80,6 +80,7 @@
 /* Perform sky localization based on TDOAs, PHOAs, and amplitude. */
 double *bayestar_sky_map_toa_phoa_snr(
     long *npix,
+    double *out_log_bayes_factor,
     /* Prior */
     double min_distance,            /* Minimum distance */
     double max_distance,            /* Maximum distance */

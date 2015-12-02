@@ -247,7 +247,7 @@ def ligolw_sky_map(
     # Time and run sky localization.
     start_time = time.time()
     if method == "toa_phoa_snr":
-        prob = sky_map.toa_phoa_snr(
+        prob, log_bayes_factor = sky_map.toa_phoa_snr(
             min_distance, max_distance, prior_distance_power, gmst, sample_rate,
             acors, responses, locations, horizons, toas, phoas, snrs, nside)
     elif method == "toa_snr_mcmc":
@@ -282,7 +282,7 @@ def ligolw_sky_map(
     elapsed_time = end_time - start_time
 
     # Done!
-    return prob, epoch, elapsed_time
+    return prob, log_bayes_factor, epoch, elapsed_time
 
 
 def gracedb_sky_map(
@@ -332,9 +332,10 @@ def gracedb_sky_map(
         for psd in psds]
 
     # Run sky localization
-    prob, epoch, elapsed_time = ligolw_sky_map(sngl_inspirals, waveform, f_low,
+    prob, log_bayes_factor, epoch, elapsed_time = \
+        ligolw_sky_map(sngl_inspirals, waveform, f_low,
         min_distance, max_distance, prior_distance_power, method=method,
         nside=nside, psds=psds, phase_convention=phase_convention,
         chain_dump=chain_dump)
 
-    return prob, epoch, elapsed_time, instruments
+    return prob, log_bayes_factor, epoch, elapsed_time, instruments

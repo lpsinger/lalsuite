@@ -165,6 +165,8 @@ my_gsl_error (const char * reason, const char * file, int line, int gsl_errno)
 static PyObject *sky_map_toa_phoa_snr(
     PyObject *NPY_UNUSED(module), PyObject *args, PyObject *kwargs)
 {
+    double log_bayes_factor;
+
     /* Input arguments */
     long nside = -1;
     long npix;
@@ -265,7 +267,7 @@ static PyObject *sky_map_toa_phoa_snr(
 
     /* Call function */
     gsl_error_handler_t *old_handler = gsl_set_error_handler(my_gsl_error);
-    double *ret = bayestar_sky_map_toa_phoa_snr(&npix, min_distance,
+    double *ret = bayestar_sky_map_toa_phoa_snr(&npix, &log_bayes_factor, min_distance,
         max_distance, prior_distance_power, gmst, nifos, nsamples, sample_rate,
         acors, responses, locations, horizons, toas, phoas, snrs);
     gsl_set_error_handler(old_handler);
@@ -273,6 +275,8 @@ static PyObject *sky_map_toa_phoa_snr(
     /* Prepare output object */
     if (ret)
         out = premalloced_npy_double_array(ret, npix);
+
+    out = Py_BuildValue("Nd", out, log_bayes_factor);
 
 fail: /* Cleanup */
     FREE_INPUT_LIST_OF_ARRAYS(acors)

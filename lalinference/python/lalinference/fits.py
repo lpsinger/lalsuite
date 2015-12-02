@@ -291,7 +291,7 @@ def gps_to_mjd(gps_time):
 
 def write_sky_map(filename, prob, nest=False, objid=None, url=None, instruments=None,
     gps_time=None, gps_creation_time=None, creator=None, origin=None,
-    runtime=None):
+    runtime=None, log_bayes_factor=None):
     """Write a gravitational-wave sky map to a file, populating the header
     with optional metadata."""
 
@@ -337,6 +337,10 @@ def write_sky_map(filename, prob, nest=False, objid=None, url=None, instruments=
     if runtime is not None:
         extra_metadata.append(('RUNTIME', runtime,
             'Runtime in seconds of the CREATOR program'))
+
+    if log_bayes_factor is not None:
+        extra_metadata.append(('LNBAYESF', log_bayes_factor,
+            'Log Bayes factor: signal vs. noise'))
 
     write_map(filename, prob, nest=nest, fits_IDL=True, coord='C',
         column_names=('PROB',), unit='pix-1', extra_metadata=extra_metadata)
@@ -436,6 +440,13 @@ def read_sky_map(filename, nest=False):
         pass
     else:
         metadata['runtime'] = value
+
+    try:
+        value = header['LNBAYESF']
+    except KeyError:
+        pass
+    else:
+        metadata['log_bayes_factor'] = value
 
     return prob, metadata
 
