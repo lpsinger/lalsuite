@@ -24,7 +24,7 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_nan.h>
 #include <lal/bayestar_sky_map.h>
-#include <assert.h>
+#include <stddef.h>
 #include "six.h"
 
 
@@ -64,30 +64,6 @@ static PyObject *premalloced_new(void *data)
     else
         free(data);
     return (PyObject *) obj;
-}
-
-
-static PyObject *premalloced_npy_double_array(double *data, int ndims, npy_intp *dims)
-{
-    PyObject *premalloced = premalloced_new(data);
-    if (!premalloced)
-        return NULL;
-
-    PyArrayObject *out = (PyArrayObject *)
-        PyArray_SimpleNewFromData(ndims, dims, NPY_DOUBLE, data);
-    if (!out)
-    {
-        Py_DECREF(premalloced);
-        return NULL;
-    }
-
-    if (PyArray_SetBaseObject(out, premalloced))
-    {
-        Py_DECREF(out);
-        return NULL;
-    }
-
-    return (PyObject *)out;
 }
 
 
@@ -137,12 +113,39 @@ static PyObject *premalloced_npy_double_array(double *data, int ndims, npy_intp 
     INPUT_VECTOR_NIFOS(double, NAME, NPY_DOUBLE)
 
 
+static PyArray_Descr *sky_map_descr;
+
+
+static PyArray_Descr *sky_map_create_descr()
+{
+    PyArray_Descr *dtype = NULL;
+
+    PyObject *dtype_dict = Py_BuildValue("{s(ssssss)s(cccccc)s(IIIIII)}",
+        "names", "ipix", "order", "prob", "distmu", "distsigma", "distnorm",
+        "formats", NPY_ULONGLTR, NPY_UBYTELTR,
+        NPY_DOUBLELTR, NPY_DOUBLELTR, NPY_DOUBLELTR, NPY_DOUBLELTR,
+        "offsets",
+        (unsigned int) offsetof(bayestar_pixel, ipix),
+        (unsigned int) offsetof(bayestar_pixel, order),
+        (unsigned int) offsetof(bayestar_pixel, prob),
+        (unsigned int) offsetof(bayestar_pixel, distmu),
+        (unsigned int) offsetof(bayestar_pixel, distsigma),
+        (unsigned int) offsetof(bayestar_pixel, distnorm));
+
+    if (dtype_dict)
+    {
+        PyArray_DescrConverter(dtype_dict, &dtype);
+        Py_DECREF(dtype_dict);
+    }
+
+    return dtype;
+}
+
+
 static PyObject *sky_map_toa_phoa_snr(
     PyObject *NPY_UNUSED(module), PyObject *args, PyObject *kwargs)
 {
     /* Input arguments */
-    long nside = -1;
-    long npix;
     double min_distance;
     double max_distance;
     int prior_distance_power;
@@ -159,26 +162,13 @@ static PyObject *sky_map_toa_phoa_snr(
     /* Names of arguments */
     static const char *keywords[] = {"min_distance", "max_distance",
         "prior_distance_power", "gmst", "sample_rate", "epochs", "snrs",
-        "responses", "locations", "horizons", "nside", NULL};
+        "responses", "locations", "horizons", NULL};
 
     /* Parse arguments */
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddiddOOOOO|l",
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddiddOOOOO",
         keywords, &min_distance, &max_distance, &prior_distance_power, &gmst,
         &sample_rate, &epochs_obj, &snrs_obj, &responses_obj, &locations_obj,
-        &horizons_obj, &nside)) return NULL;
-
-    /* Determine HEALPix resolution, if specified */
-    if (nside == -1)
-    {
-        npix = -1;
-    } else {
-        npix = nside2npix(nside);
-        if (npix == -1)
-        {
-            PyErr_SetString(PyExc_ValueError, "nside must be a power of 2");
-            return NULL;
-        }
-    }
+        &horizons_obj)) return NULL;
 
     /* Determine number of detectors */
     {
@@ -235,16 +225,35 @@ static PyObject *sky_map_toa_phoa_snr(
 
     /* Call function */
     gsl_error_handler_t *old_handler = gsl_set_error_handler_off();
-    double (*ret)[4] = bayestar_sky_map_toa_phoa_snr(&npix, min_distance,
-        max_distance, prior_distance_power, gmst, nifos, nsamples, sample_rate,
-        epochs, snrs, responses, locations, horizons);
+    size_t len;
+    bayestar_pixel *pixels = bayestar_sky_map_toa_phoa_snr(
+        &len, min_distance, max_distance, prior_distance_power, gmst, nifos,
+        nsamples, sample_rate, epochs, snrs, responses, locations, horizons);
     gsl_set_error_handler(old_handler);
 
+    if (!pixels)
+        goto fail;
+
     /* Prepare output object */
-    if (ret)
+    PyObject *premalloced = premalloced_new(pixels);
+    if (!premalloced)
+        return NULL;
+
+    npy_intp dims[] = {len};
+    Py_INCREF(sky_map_descr);
+    out = (PyArrayObject *) PyArray_NewFromDescr(&PyArray_Type,
+        sky_map_descr, 1, dims, NULL, pixels, NPY_ARRAY_DEFAULT, NULL);
+    if (!out)
     {
-        npy_intp dims[] = {npix, 4};
-        out = premalloced_npy_double_array(ret, 2, dims);
+        Py_DECREF(premalloced);
+        goto fail;
+    }
+
+    if (PyArray_SetBaseObject(out, premalloced))
+    {
+        Py_DECREF(out);
+        out = NULL;
+        goto fail;
     }
 
 fail: /* Cleanup */
@@ -489,6 +498,10 @@ PyMODINIT_FUNC PyInit__sky_map(void)
     PyObject *module = NULL;
 
     import_array();
+
+    sky_map_descr = sky_map_create_descr();
+    if (!sky_map_descr)
+        goto done;
 
     premalloced_type.tp_new = PyType_GenericNew;
     if (PyType_Ready(&premalloced_type) < 0)

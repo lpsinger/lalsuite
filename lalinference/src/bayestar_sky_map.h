@@ -77,9 +77,25 @@
 #include <sys/types.h>
 
 
+/* Maximum 64-bit HEALPix resolution */
+#define HEALPIX_MACHINE_ORDER 29
+#define HEALPIX_MACHINE_NSIDE (1 << HEALPIX_MACHINE_ORDER)
+#define HEALPIX_MACHINE_NPIX (12 * (1 << 2 * HEALPIX_MACHINE_ORDER))
+
+
+/* Data structure to store a pixel in an adaptively refined sky map. */
+typedef struct {
+    unsigned long ipix;     /* HEALPix nested pixel index at machine resolution */
+    unsigned char order;    /* HEALPix resolution order */
+    double prob;            /* Probability density per steradian */
+    double distmu;
+    double distsigma;
+    double distnorm;
+} bayestar_pixel;
+
 /* Perform sky localization based on TDOAs, PHOAs, and amplitude. */
-double (*bayestar_sky_map_toa_phoa_snr(
-    long *npix,
+bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
+    size_t *out_len,                /* Number of returned pixels */
     /* Prior */
     double min_distance,            /* Minimum distance */
     double max_distance,            /* Maximum distance */
@@ -94,7 +110,7 @@ double (*bayestar_sky_map_toa_phoa_snr(
     const float (**responses)[3],   /* Detector responses */
     const double **locations,       /* Barycentered Cartesian geographic detector positions (m) */
     const double *horizons          /* SNR=1 horizon distances for each detector */
-))[4];
+);
 
 double bayestar_log_likelihood_toa_phoa_snr(
     /* Parameters */

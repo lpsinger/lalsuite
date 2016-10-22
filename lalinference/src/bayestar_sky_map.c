@@ -617,48 +617,36 @@ static double complex exp_i(double phi) {
 }
 
 
-/* Data structure to store a pixel in an adaptively refined sky map. */
+/* Internal data structure to store a pixel in an adaptively refined sky map. */
 typedef struct {
-    double log4p_r[3];      /* Logarithm base 4 of probability x distance^k */
-    unsigned char order;    /* HEALPix resolution order */
     unsigned long ipix;     /* HEALPix nested pixel index */
-} adaptive_sky_map_pixel;
-
-
-/* Data structure to store an adaptively refined sky map. */
-typedef struct {
-    unsigned char max_order;
-    size_t len;
-    adaptive_sky_map_pixel pixels[];
-} adaptive_sky_map;
+    unsigned char order;    /* HEALPix resolution order */
+    double value[3];        /* Probability density per steradian */
+} _bayestar_pixel;
 
 
 /* Compare two pixels by contained probability. */
-static int adaptive_sky_map_pixel_compare(const void *a, const void *b)
+static int _bayestar_pixel_compare(const void *a, const void *b)
 {
-    int ret;
-    const adaptive_sky_map_pixel *apix = a;
-    const adaptive_sky_map_pixel *bpix = b;
+    const _bayestar_pixel *apix = a;
+    const _bayestar_pixel *bpix = b;
 
-    const double delta_log4p = apix->log4p_r[0] - bpix->log4p_r[0];
-    const char delta_order = apix->order - bpix->order;
+    const double delta_logp = (apix->value[0] - bpix->value[0])
+        - 2 * M_LN2 * (apix->order - bpix->order);
 
-    if (delta_log4p < delta_order)
-        ret = -1;
-    else if (delta_log4p > delta_order)
-        ret = 1;
+    if (delta_logp < 0)
+        return -1;
+    else if (delta_logp > 0)
+        return 1;
     else
-        ret = 0;
-
-    return ret;
+        return 0;
 }
 
 
 /* Sort pixels by ascending contained probability. */
-static void adaptive_sky_map_sort(adaptive_sky_map *map)
+static void _bayestar_pixels_sort(_bayestar_pixel *pixels, size_t len)
 {
-    qsort(map->pixels, map->len, sizeof(map->pixels[0]),
-        adaptive_sky_map_pixel_compare);
+    qsort(pixels, len, sizeof(_bayestar_pixel), _bayestar_pixel_compare);
 }
 
 
@@ -675,116 +663,109 @@ static void *realloc_or_free(void *ptr, size_t size)
 
 
 /* Subdivide the final last_n pixels of an adaptively refined sky map. */
-static adaptive_sky_map *adaptive_sky_map_refine(
-    adaptive_sky_map *map,
-    size_t last_n
+static _bayestar_pixel *_bayestar_pixels_refine(
+    _bayestar_pixel *pixels, size_t *len, size_t last_n
 ) {
-    assert(last_n <= map->len);
+    assert(last_n <= *len);
 
     /* New length: adding 4*last_n new pixels, removing last_n old pixels. */
-    const size_t new_len = map->len + 3 * last_n;
-    const size_t new_size = sizeof(adaptive_sky_map)
-        + new_len * sizeof(adaptive_sky_map_pixel);
+    const size_t new_len = *len + 3 * last_n;
+    const size_t new_size = new_len * sizeof(_bayestar_pixel);
 
-    map = realloc_or_free(map, new_size);
-    if (map)
+    pixels = realloc_or_free(pixels, new_size);
+    if (pixels)
     {
         for (size_t i = 0; i < last_n; i ++)
         {
-            adaptive_sky_map_pixel *const old_pixel
-                = &map->pixels[map->len - i - 1];
+            _bayestar_pixel *const old_pixel = &pixels[*len - i - 1];
             const unsigned char order = 1 + old_pixel->order;
-            if (order > map->max_order)
-                map->max_order = order;
             const unsigned long ipix = 4 * old_pixel->ipix;
             for (unsigned char j = 0; j < 4; j ++)
             {
-                adaptive_sky_map_pixel *const new_pixel
-                    = &map->pixels[new_len - (4 * i + j) - 1];
+                _bayestar_pixel *const new_pixel
+                    = &pixels[new_len - (4 * i + j) - 1];
                 for (unsigned char k = 0; k < 3; k ++)
-                    new_pixel->log4p_r[k] = old_pixel->log4p_r[k];
+                    new_pixel->value[k] = old_pixel->value[k];
                 new_pixel->order = order;
                 new_pixel->ipix = j + ipix;
             }
         }
-        map->len = new_len;
+        *len = new_len;
     }
-    return map;
+    return pixels;
 }
 
 
-static adaptive_sky_map *adaptive_sky_map_alloc(unsigned char order)
+/* Allocate an adaptively refined sky map. */
+static _bayestar_pixel *_bayestar_pixels_alloc(size_t *len, unsigned char order)
 {
     const unsigned long nside = (unsigned long)1 << order;
     const unsigned long npix = nside2npix(nside);
-    const size_t size = sizeof(adaptive_sky_map)
-        + npix * sizeof(adaptive_sky_map_pixel);
+    const size_t size = npix * sizeof(bayestar_pixel);
 
-    adaptive_sky_map *map = malloc(size);
-    if (!map)
+    _bayestar_pixel *pixels = malloc(size);
+    if (!pixels)
         XLAL_ERROR_NULL(XLAL_ENOMEM, "not enough memory to allocate sky map");
 
-    map->len = npix;
-    map->max_order = order;
+    *len = npix;
     for (unsigned long ipix = 0; ipix < npix; ipix ++)
     {
         for (unsigned char k = 0; k < 3; k ++)
-            map->pixels[ipix].log4p_r[k] = GSL_NAN;
-        map->pixels[ipix].order = order;
-        map->pixels[ipix].ipix = ipix;
+            pixels[ipix].value[k] = GSL_NAN;
+        pixels[ipix].order = order;
+        pixels[ipix].ipix = ipix;
     }
-    return map;
+    return pixels;
 }
 
 
-static const double M_LN4 = 2 * M_LN2;
-static const double M_1_LN4 = 0.5 / M_LN2;
-
-
-static double (*adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix))[4]
+/* Sort pixels by HEALPix index. */
+static int bayestar_pixel_spatial_compare(const void *a, const void *b)
 {
-    const unsigned char order = map->max_order;
-    const unsigned long nside = (unsigned long)1 << order;
-    const long npix = nside2npix(nside);
+    const bayestar_pixel *apix = (const bayestar_pixel *)a;
+    const bayestar_pixel *bpix = (const bayestar_pixel *)b;
+    long pixdiff = apix->ipix - bpix->ipix;
 
-    double (*P)[4] = malloc(npix * 4 * sizeof(double));
-    if (!P)
-        XLAL_ERROR_NULL(XLAL_ENOMEM, "not enough memory to allocate image");
+    if (pixdiff < 0)
+        return -1;
+    else if (pixdiff > 0)
+        return 1;
+    else
+        return 0;
+}
+
+
+/* Convert from internal representation of adaptively refined sky map
+ * to external representation. */
+static bayestar_pixel *_bayestar_pixels_finish(
+    _bayestar_pixel *pixels, size_t len)
+{
+    bayestar_pixel *new_pixels = malloc(sizeof(bayestar_pixel) * len);
+    if (!new_pixels)
+        goto done;
 
     double norm = 0;
-    const double max_log4p = map->pixels[map->len - 1].log4p_r[0];
+    const double max_logp = pixels[len - 1].value[0];
 
-    /* Rescale so that log(max) = 0, and convert from log base 4 to
-     * natural logarithm. */
-    for (ssize_t i = (ssize_t)map->len - 1; i >= 0; i --)
-    {
+    /* Rescale so that log(max) = 0. */
+    for (ssize_t i = (ssize_t)len - 1; i >= 0; i --)
         for (unsigned char k = 0; k < 3; k ++)
-        {
-            map->pixels[i].log4p_r[k] -= max_log4p;
-            map->pixels[i].log4p_r[k] *= M_LN4;
-        }
-    }
+            pixels[i].value[k] -= max_logp;
 
-    for (ssize_t i = (ssize_t)map->len - 1; i >= 0; i --)
+    for (ssize_t i = (ssize_t)len - 1; i >= 0; i --)
     {
-        const unsigned long reps = (unsigned long)1 << 2 * (order - map->pixels[i].order);
-        const double dP = gsl_sf_exp_mult(map->pixels[i].log4p_r[0], reps);
+        const double dA = ldexp(M_PI / 3, -2 * pixels[i].order);
+        const double dP = gsl_sf_exp_mult(pixels[i].value[0], dA);
         if (dP <= 0)
             break; /* We have reached underflow. */
         norm += dP;
     }
     norm = 1 / norm;
-    for (ssize_t i = (ssize_t)map->len - 1; i >= 0; i --)
+    for (ssize_t i = (ssize_t)len - 1; i >= 0; i --)
     {
-        const unsigned long base_ipix = map->pixels[i].ipix;
-        const unsigned long reps = (unsigned long)1 << 2 * (order - map->pixels[i].order);
-        const unsigned long start = base_ipix * reps;
-        const unsigned long stop = (base_ipix + 1) * reps;
-
-        const double prob = gsl_sf_exp_mult(map->pixels[i].log4p_r[0], norm);
-        double rmean = exp(map->pixels[i].log4p_r[1] - map->pixels[i].log4p_r[0]);
-        double rstd = exp(map->pixels[i].log4p_r[2] - map->pixels[i].log4p_r[0]) - gsl_pow_2(rmean);
-        double distmu, distsigma, distnorm;
+        const double prob = gsl_sf_exp_mult(pixels[i].value[0], norm);
+        double rmean = exp(pixels[i].value[1] - pixels[i].value[0]);
+        double rstd = exp(pixels[i].value[2] - pixels[i].value[0]) - gsl_pow_2(rmean);
         if (rstd >= 0)
         {
             rstd = sqrt(rstd);
@@ -792,24 +773,27 @@ static double (*adaptive_sky_map_rasterize(adaptive_sky_map *map, long *out_npix
             rmean = INFINITY;
             rstd = 1;
         }
-        bayestar_distance_moments_to_parameters(rmean, rstd, &distmu, &distsigma, &distnorm);
-
-        for (unsigned long ipix_nest = start; ipix_nest < stop; ipix_nest ++)
-        {
-            P[ipix_nest][0] = prob;
-            P[ipix_nest][1] = distmu;
-            P[ipix_nest][2] = distsigma;
-            P[ipix_nest][3] = distnorm;
-        }
+        new_pixels[i].ipix = pixels[i].ipix << 2 * (HEALPIX_MACHINE_ORDER - pixels[i].order);
+        new_pixels[i].order = pixels[i].order;
+        new_pixels[i].prob = prob;
+        bayestar_distance_moments_to_parameters(
+            rmean, rstd,
+            &new_pixels[i].distmu,
+            &new_pixels[i].distsigma,
+            &new_pixels[i].distnorm);
     }
-    *out_npix = npix;
 
-    return P;
+    qsort(new_pixels, len, sizeof(bayestar_pixel),
+        bayestar_pixel_spatial_compare);
+
+done:
+    free(pixels);
+    return new_pixels;
 }
 
 
-double (*bayestar_sky_map_toa_phoa_snr(
-    long *inout_npix,
+bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
+    size_t *out_len,                /* Number of returned pixels */
     /* Prior */
     double min_distance,            /* Minimum distance */
     double max_distance,            /* Maximum distance */
@@ -824,7 +808,7 @@ double (*bayestar_sky_map_toa_phoa_snr(
     const float (**responses)[3],   /* Detector responses */
     const double **locations,       /* Barycentered Cartesian geographic detector positions (m) */
     const double *horizons          /* SNR=1 horizon distances for each detector */
-))[4] {
+) {
     log_radial_integrator *integrators[] = {NULL, NULL, NULL};
     {
         double pmax = 0;
@@ -849,14 +833,15 @@ double (*bayestar_sky_map_toa_phoa_snr(
 
     static const unsigned char order0 = 4;
     unsigned char level = order0;
-    adaptive_sky_map *map = adaptive_sky_map_alloc(order0);
-    if (!map)
+    size_t len;
+    _bayestar_pixel *pixels = _bayestar_pixels_alloc(&len, order0);
+    if (!pixels)
     {
         for (unsigned char k = 0; k < 3; k ++)
             log_radial_integrator_free(integrators[k]);
         return NULL;
     }
-    const unsigned long npix0 = map->len;
+    const unsigned long npix0 = len;
 
     /* Look up Gauss-Legendre quadrature rule for integral over cos(i). */
     gsl_integration_glfixed_table *gltable
@@ -876,7 +861,7 @@ double (*bayestar_sky_map_toa_phoa_snr(
         #pragma omp parallel for
         for (unsigned long i = 0; i < npix0; i ++)
         {
-            adaptive_sky_map_pixel *const pixel = &map->pixels[map->len - npix0 + i];
+            _bayestar_pixel *const pixel = &pixels[len - npix0 + i];
             double complex F[nifos];
             double dt[nifos];
             double accum[3] = {-INFINITY, -INFINITY, -INFINITY};
@@ -966,32 +951,28 @@ double (*bayestar_sky_map_toa_phoa_snr(
             /* Record logarithm base 4 of posterior. */
             for (unsigned char k = 0; k < 3; k ++)
             {
-                pixel->log4p_r[k] = M_1_LN4 * accum[k];
+                pixel->value[k] = accum[k];
             }
         }
 
         /* Sort pixels by ascending posterior probability. */
-        adaptive_sky_map_sort(map);
+        _bayestar_pixels_sort(pixels, len);
 
         /* If we have reached order=11 (nside=2048), stop. */
         if (level++ >= 11)
             break;
 
         /* Adaptively refine the pixels that contain the most probability. */
-        map = adaptive_sky_map_refine(map, npix0 / 4);
-        if (!map)
+        pixels = _bayestar_pixels_refine(pixels, &len, npix0 / 4);
+        if (!pixels)
             return NULL;
     }
 
     for (unsigned char k = 0; k < 3; k ++)
         log_radial_integrator_free(integrators[k]);
 
-    /* Flatten sky map to an image. */
-    double (*P)[4] = adaptive_sky_map_rasterize(map, inout_npix);
-    free(map);
-
-    /* Done! */
-    return P;
+    *out_len = len;
+    return _bayestar_pixels_finish(pixels, len);
 }
 
 

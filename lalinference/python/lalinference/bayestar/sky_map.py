@@ -55,6 +55,16 @@ def toa_phoa_snr_log_prior(
         else -np.inf)
 
 
+def rasterize(skymap):
+    max_order = int(skymap['order'].max())
+    pixarea = np.ldexp(np.pi / 3, -2 * max_order)
+    return np.concatenate([
+        np.broadcast_to(
+            (p['prob'] * pixarea, p['distmu'], p['distsigma'], p['distnorm']),
+            (1 << 2 * (max_order - int(p['order'])), 4))
+        for p in skymap])
+
+
 @with_numpy_random_seed
 def emcee_sky_map(
         logl, loglargs, logp, logpargs, xmin, xmax,
@@ -311,9 +321,9 @@ def ligolw_sky_map(
     # Time and run sky localization.
     start_time = time.time()
     if method == "toa_phoa_snr":
-        prob = _sky_map.toa_phoa_snr(
+        prob = rasterize(_sky_map.toa_phoa_snr(
             min_distance, max_distance, prior_distance_power, gmst, sample_rate,
-            toas, snr_series, responses, locations, horizons, nside).T
+            toas, snr_series, responses, locations, horizons)).T
     elif method == "toa_phoa_snr_mcmc":
         prob = emcee_sky_map(
             logl=_sky_map.log_likelihood_toa_phoa_snr,
