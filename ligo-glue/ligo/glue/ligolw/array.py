@@ -272,7 +272,7 @@ def use_in(ContentHandler):
 	...	pass
 	...
 	>>> use_in(MyContentHandler)
-	<class 'glue.ligolw.array.MyContentHandler'>
+	<class 'ligo.glue.ligolw.array.MyContentHandler'>
 	"""
 	def startStream(self, parent, attrs, __orig_startStream = ContentHandler.startStream):
 		if parent.tagName == ligolw.Array.tagName:

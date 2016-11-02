@@ -6,17 +6,17 @@
 
 
 
-Name: 		glue
+Name: 		ligo-glue
 Summary:	The Grid LSC User Environment
-Version:	1.54.0
+Version:	2.0.0
 Release:	1%{?dist}
 License:	None
 Group:		Development/Libraries
 Source:		%{name}-%{version}.tar.gz
 Url:		http://www.lsc-group.phys.uwm.edu/daswg/projects/glue.html
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	python-cjson m2crypto python-six glue-common glue-segments python >= 2.6
-BuildRequires:  python-devel, python-setuptools
+Requires:	python-cjson m2crypto python-six ligo-common ligo-glue-common ligo-glue-segments python >= 2.6
+BuildRequires:  python-devel python-setuptools ligo-common
 Prefix:         %{_glue_prefix}
 %description
 Glue (Grid LSC User Environment) is a suite of python modules and programs to
@@ -25,14 +25,14 @@ allow users to run LSC codes on the grid.
 %package common
 Summary:	The common files needed for all sub-packages
 Group: 		Development/Libraries
-Requires: 	python
+Requires: 	python ligo-common
 %description common
 This is for the files that are common across the glue subpackages, namely git_version, iterutils and __init__.py
 
 %package segments
 Summary:        The segments subpackage
 Group:          Development/Libraries
-Requires:       python glue-common
+Requires:       python ligo-glue-common ligo-common
 %description segments
 This is for the segments subpackage, written by Kipp.
 
@@ -48,50 +48,54 @@ rm -rf %{buildroot}
         --skip-build \
         --root=%{buildroot} \
         --prefix=%{_glue_prefix}
-rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/glue-1.54.0-py2.?.egg-info
+rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/ligo_glue-%{version}-py2.?.egg-info
+rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/ligo_glue-%{version}-py2.?-nspkg.pth
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
-%{glue_python_sitearch}/glue/
+%{glue_python_sitearch}/ligo/glue/
 %{_glue_prefix}/bin/*
 %exclude %{_glue_prefix}/etc/
 %exclude %{_glue_prefix}/var/
 %exclude %{_glue_prefix}/share/nmi/lalsuite-build*
-%exclude %{glue_python_sitearch}/glue/__init__.py
-%exclude %{glue_python_sitearch}/glue/__init__.pyc
-%exclude %{glue_python_sitearch}/glue/segments.py
-%exclude %{glue_python_sitearch}/glue/iterutils.py
-%exclude %{glue_python_sitearch}/glue/git_version.py
-%exclude %{glue_python_sitearch}/glue/segments.pyc
-%exclude %{glue_python_sitearch}/glue/iterutils.pyc
-%exclude %{glue_python_sitearch}/glue/git_version.pyc
-%exclude %{glue_python_sitearch}/glue/__segments.so
+%exclude %{glue_python_sitearch}/ligo/glue/__init__.py
+%exclude %{glue_python_sitearch}/ligo/glue/__init__.pyc
+%exclude %{glue_python_sitearch}/ligo/glue/segments.py
+%exclude %{glue_python_sitearch}/ligo/glue/iterutils.py
+%exclude %{glue_python_sitearch}/ligo/glue/git_version.py
+%exclude %{glue_python_sitearch}/ligo/glue/segments.pyc
+%exclude %{glue_python_sitearch}/ligo/glue/iterutils.pyc
+%exclude %{glue_python_sitearch}/ligo/glue/git_version.pyc
+%exclude %{glue_python_sitearch}/ligo/glue/__segments.so
 #%exclude %{_glue_prefix}/src/segments/
 #%exclude %{_glue_prefix}/test/segment_verify.py
 #%exclude %{_glue_prefix}/test/segmentsUtils_verify.py
 #%exclude %{_glue_prefix}/test/verifyutils.py
 
 %files segments
-%{glue_python_sitearch}/glue/segments.py
-%{glue_python_sitearch}/glue/segments.pyc
-%{glue_python_sitearch}/glue/__segments.so
+%{glue_python_sitearch}/ligo/glue/segments.py
+%{glue_python_sitearch}/ligo/glue/segments.pyc
+%{glue_python_sitearch}/ligo/glue/__segments.so
 #%{glue_python_sitearch}/src/segments/
 #%{glue_python_sitearch}/test/segment_verify.py
 #%{glue_python_sitearch}/test/segmentsUtils_verify.py
 #%{glue_python_sitearch}/test/verifyutils.py
 
 %files common
-%{glue_python_sitearch}/glue/__init__.py
-%{glue_python_sitearch}/glue/__init__.pyc
-%{glue_python_sitearch}/glue/iterutils.pyc
-%{glue_python_sitearch}/glue/iterutils.py
-%{glue_python_sitearch}/glue/git_version.py
-%{glue_python_sitearch}/glue/git_version.pyc
+%{glue_python_sitearch}/ligo/glue/__init__.py
+%{glue_python_sitearch}/ligo/glue/__init__.pyc
+%{glue_python_sitearch}/ligo/glue/iterutils.pyc
+%{glue_python_sitearch}/ligo/glue/iterutils.py
+%{glue_python_sitearch}/ligo/glue/git_version.py
+%{glue_python_sitearch}/ligo/glue/git_version.pyc
 
 %changelog
+* Tue Mar 21 2017 Leo Singer <leo.singer@ligo.org>
+- Renamed to ligo-glue.
+
 * Wed Jan 25 2017 Ryan Fisher <rpfisher@syr.edu>
 - O2 mid-run updated release. Updated python 3 compatibility fix from Leo to fix Debian package build for lalsuite.  Various updates from Kipp.
 

@@ -3614,7 +3614,7 @@ class Segment(table.Table.RowType):
 	False
 	>>> # make sure results are segment table row objects
 	>>> segments.segmentlist(map(Segment, x & y))	# doctest: +ELLIPSIS
-	[<glue.ligolw.lsctables.Segment object at 0x...>, <glue.ligolw.lsctables.Segment object at 0x...>]
+	[<ligo.glue.ligolw.lsctables.Segment object at 0x...>, <ligo.glue.ligolw.lsctables.Segment object at 0x...>]
 
 	This implementation uses a non-standard extension to encode
 	infinite values for boundaries:  the second and nanosecond
@@ -4371,7 +4371,7 @@ def use_in(ContentHandler):
 	...	pass
 	...
 	>>> use_in(MyContentHandler)
-	<class 'glue.ligolw.lsctables.MyContentHandler'>
+	<class 'ligo.glue.ligolw.lsctables.MyContentHandler'>
 	"""
 	ContentHandler = table.use_in(ContentHandler)
 

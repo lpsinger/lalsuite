@@ -1,3 +1,9 @@
+ligo-glue (2.0.0-1) UNRELEASED; urgency=medium
+
+  * Renamed to ligo-glue.
+
+ -- Leo Singer <leo.singer@ligo.org>  Tue, 21 Mar 2017 13:41:05 -0400
+
 glue (1.54.0-1) unstable; urgency=low
 
   * O2 mid-run updated release. Updated python 3 compatibility fix from Leo to

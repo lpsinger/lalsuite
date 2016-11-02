@@ -46,7 +46,7 @@ relevant connection:
 
 >>> cache = connection.find_frame_urls('L', 'L1_R', 1093564816, 1093651216)
 
-By default, the returned L{Cache<glue.lal.Cache>} object includes both C{gsiftp} and local C{file} versions of each frame, but the C{urlfile} keyword argument can be given to return only one of those:
+By default, the returned L{Cache<ligo.glue.lal.Cache>} object includes both C{gsiftp} and local C{file} versions of each frame, but the C{urlfile} keyword argument can be given to return only one of those:
 
 >>> cache = connection.find_frame_urls('L', 'L1_R', 1093564816, 1093651216, urltype='file')
 
@@ -210,7 +210,7 @@ class GWDataFindHTTPConnection(six.moves.http_client.HTTPConnection):
         Use gpsstart and gpsend to restrict the returned times to
         this semiopen interval.
 
-        @returns: L{segmentlist<glue.segments.segmentlist>}
+        @returns: L{segmentlist<ligo.glue.segments.segmentlist>}
 
         @param site:
             single-character name of site to match
@@ -240,7 +240,7 @@ class GWDataFindHTTPConnection(six.moves.http_client.HTTPConnection):
     def find_frame(self, framefile, urltype=None, on_missing="warn"):
         """Query the LDR host for a single framefile
 
-        @returns: L{Cache<glue.lal.Cache>}
+        @returns: L{Cache<ligo.glue.lal.Cache>}
 
         @param frametype:
             name of frametype to match
@@ -301,8 +301,8 @@ class GWDataFindHTTPConnection(six.moves.http_client.HTTPConnection):
         @type    urltype: L{str}
         @type on_missing: L{str}
 
-        @returns: L{Cache<glue.lal.Cache>} with one
-                  L{entry<glue.lal.CacheEntry>}
+        @returns: L{Cache<ligo.glue.lal.Cache>} with one
+                  L{entry<ligo.glue.lal.CacheEntry>}
 
         @raises RuntimeError: if given framefile is malformed
         @raises RuntimeError: if no frames are found and C{on_missing='error'}
@@ -356,7 +356,7 @@ class GWDataFindHTTPConnection(six.moves.http_client.HTTPConnection):
         @type    urltype: L{str}
         @type    on_gaps: L{str}
 
-        @returns: L{Cache<glue.lal.Cache>}
+        @returns: L{Cache<ligo.glue.lal.Cache>}
 
         @raises RuntimeError: if gaps are found and C{on_gaps='error'}
         """

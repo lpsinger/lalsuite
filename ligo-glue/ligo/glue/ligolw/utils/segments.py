@@ -353,7 +353,7 @@ class LigolwSegments(set):
 	>>> from glue.ligolw import ligolw, lsctables
 	>>> xmldoc = ligolw.Document()
 	>>> xmldoc.appendChild(ligolw.LIGO_LW())	# doctest: +ELLIPSIS
-	<glue.ligolw.ligolw.LIGO_LW object at ...>
+	<ligo.glue.ligolw.ligolw.LIGO_LW object at ...>
 	>>> process = lsctables.Process(process_id = lsctables.ProcessTable.get_next_id())
 	>>> with LigolwSegments(xmldoc, process) as xmlsegments:
 	...	h1segs = segmentlist([segment(LIGOTimeGPS(0), LIGOTimeGPS(10))])

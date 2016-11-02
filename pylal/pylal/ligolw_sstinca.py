@@ -671,7 +671,7 @@ class sngl_inspiral_coincs(object):
 	>>> print(coincs.coinc_def_id)
 	coinc_definer:coinc_def_id:0
 	>>> coincs.keys()
-	[<glue.ligolw.ilwd.cached_ilwdchar_class object at 0x41a4328>]
+	[<ligo.glue.ligolw.ilwd.cached_ilwdchar_class object at 0x41a4328>]
 	>>> coinc_id = coincs.keys()[0]
 	>>> print(coinc_id)
 	coinc_event:coinc_event_id:83763

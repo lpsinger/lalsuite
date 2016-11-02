@@ -34,7 +34,7 @@
 #include "six.h"
 
 
-#define MODULE_NAME "glue.ligolw._ilwd"
+#define MODULE_NAME "ligo.glue.ligolw._ilwd"
 #define MODULE_DOC "C extension module providing the ilwdchar parent class for row ID classes."
 
 

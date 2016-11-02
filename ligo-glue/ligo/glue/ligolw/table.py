@@ -160,7 +160,7 @@ class Column(ligolw.Column):
 	>>> tbl = Table(AttributesImpl({u"Name": u"test"}))
 	>>> col = tbl.appendChild(Column(AttributesImpl({u"Name": u"test:snr", u"Type": u"real_8"})))
 	>>> tbl.appendChild(TableStream(AttributesImpl({u"Name": u"test"})))	# doctest: +ELLIPSIS
-	<glue.ligolw.table.TableStream object at ...>
+	<ligo.glue.ligolw.table.TableStream object at ...>
 	>>> tbl._update_column_info()
 	>>> col.Name
 	u'snr'
@@ -973,7 +973,7 @@ def use_in(ContentHandler):
 	...	pass
 	...
 	>>> use_in(LIGOLWContentHandler)
-	<class 'glue.ligolw.table.LIGOLWContentHandler'>
+	<class 'ligo.glue.ligolw.table.LIGOLWContentHandler'>
 	"""
 	def startColumn(self, parent, attrs):
 		return Column(attrs)
