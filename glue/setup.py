@@ -19,17 +19,8 @@ if version_info < (2, 7):
   print("Glue requires at least version 2.7", file=sys.stderr)
   sys.exit(1)
 
-try:
-    from setuptools import setup
-except ImportError as e:
-    if os.path.basename(os.path.dirname(__file__)).startswith('pip-'):
-        e.args = ('setuptools module not found, cannot proceed with pip '
-                  'install',)
-        raise
-    from distutils.core import setup
-    from distutils.command import install
-else:
-    from setuptools.command import install
+from setuptools import setup
+from setuptools.command import install
 import pkg_resources
 from distutils.core import Extension
 from distutils.command import build_py
