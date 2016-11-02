@@ -28,7 +28,7 @@ def remove_root(path,root):
 def write_build_info():
   """
   Get VCS info from misc/generate_vcs_info.py and add build information.
-  Substitute these into misc/git_version.py.in to produce glue/git_version.py.
+  Substitute these into misc/git_version.py.in to produce ligo/glue/git_version.py.
   """
   vcs_info = gvcsi.generate_git_version_info()
 
@@ -60,24 +60,24 @@ def write_build_info():
 
   # FIXME: subprocess.check_call becomes available in Python 2.5
   sed_retcode = subprocess.call(sed_cmd,
-    stdout=open('glue/git_version.py', 'w'))
+    stdout=open('ligo/glue/git_version.py', 'w'))
   if sed_retcode:
     raise gvcsi.GitInvocationError
 
 class glue_build_py(build_py.build_py):
   def run(self):
     # create the git_version module
-    log.info("Generating glue/git_version.py")
+    log.info("Generating ligo/glue/git_version.py")
     try:
       write_build_info()
     except gvcsi.GitInvocationError:
-      if os.path.exists("glue/git_version.py"):
+      if os.path.exists("ligo/glue/git_version.py"):
         # We're probably being built from a release tarball; don't overwrite
         log.info("Not in git checkout or cannot find git executable; "\
-            "using existing glue/git_version.py")
+            "using existing ligo/glue/git_version.py")
       else:
         log.error("Not in git checkout or cannot find git executable "\
-            "and no glue/git_version.py. Exiting.")
+            "and no ligo/glue/git_version.py. Exiting.")
         sys.exit(1)
 
     # resume normal build procedure
@@ -185,26 +185,27 @@ class glue_sdist(sdist.sdist):
         pass
 
     # create the git_version module
-    log.info("Generating glue/git_version.py")
+    log.info("Generating ligo/glue/git_version.py")
     try:
       write_build_info()
     except gvcsi.GitInvocationError:
       log.error("Not in git checkout or cannot find git executable and no "\
-        "glue/git_version.py. Exiting.")
+        "ligo/glue/git_version.py. Exiting.")
       sys.exit(1)
 
     # now run sdist
     sdist.sdist.run(self)
 
 setup(
-  name = "glue",
+  name = "ligo-glue",
   version = ver,
   author = "Duncan Brown",
   author_email = "dbrown@ligo.caltech.edu",
   description = "Grid LSC User Engine",
   url = "http://www.lsc-group.phys.uwm.edu/daswg/",
   license = 'See file LICENSE',
-  packages = [ 'glue', 'glue.ligolw', 'glue.ligolw.utils', 'glue.segmentdb', 'glue.nmi', 'glue.auth'],
+  namespace_packages = ['ligo'],
+  packages = [ 'ligo.glue', 'ligo.glue.ligolw', 'ligo.glue.ligolw.utils', 'ligo.glue.segmentdb', 'ligo.glue.nmi', 'ligo.glue.auth'],
   cmdclass = {
     'build_py' : glue_build_py,
     'install' : glue_install,
@@ -213,24 +214,24 @@ setup(
   },
   ext_modules = [
     Extension(
-      "glue.ligolw.tokenizer",
+      "ligo.glue.ligolw.tokenizer",
       [
-        "glue/ligolw/tokenizer.c",
-        "glue/ligolw/tokenizer.Tokenizer.c",
-        "glue/ligolw/tokenizer.RowBuilder.c",
-        "glue/ligolw/tokenizer.RowDumper.c"
+        "ligo/glue/ligolw/tokenizer.c",
+        "ligo/glue/ligolw/tokenizer.Tokenizer.c",
+        "ligo/glue/ligolw/tokenizer.RowBuilder.c",
+        "ligo/glue/ligolw/tokenizer.RowDumper.c"
       ],
-      include_dirs = [ "src", "glue/ligolw" ]
+      include_dirs = [ "src", "ligo/glue/ligolw" ]
     ),
     Extension(
-      "glue.ligolw._ilwd",
+      "ligo.glue.ligolw._ilwd",
       [
-        "glue/ligolw/ilwd.c"
+        "ligo/glue/ligolw/ilwd.c"
       ],
-      include_dirs = [ "src", "glue/ligolw" ]
+      include_dirs = [ "src", "ligo/glue/ligolw" ]
     ),
     Extension(
-      "glue.__segments",
+      "ligo.glue.__segments",
       [
         "src/segments/segments.c",
         "src/segments/infinity.c",
