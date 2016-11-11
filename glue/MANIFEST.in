@@ -1,0 +1,3 @@
+include *.spec
+include debian/*
+include debian/source/*
