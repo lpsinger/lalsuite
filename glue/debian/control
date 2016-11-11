@@ -1,0 +1,60 @@
+Source: glue
+Section: python
+Priority: optional
+Maintainer: Steffen Grunewald <steffen.grunewald@aei.mpg.de>
+Build-Depends: debhelper (>= 9), python-all-dev, python3-all-dev, python-setuptools, python3-setuptools, dh-python
+X-Python-Version: >= 2.7
+X-Python3-Version: >= 3.4
+Standards-Version: 3.9.3
+
+Package: python-glue-import-hook
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}
+Description: Python import hook to ease rename from glue to ligo.glue
+ Maps importing glue to importing ligo.glue.
+
+Package: python-glue
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python-glue-import-hook, python-ligo-glue, python-ligo-glue-segments
+Replaces: glue
+Conflicts: glue
+Description: Transitional metapackage for python-ligo-glue
+ Transitional metapackage to track rename to python-ligo-glue.
+
+Package: python-glue-segments
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python-glue-import-hook, python-ligo-glue-segments
+Description: Transitional metapackage for python-ligo-glue-segments
+ Transitional metapackage to track rename to python-ligo-glue-segments.
+
+Package: python-glue-common
+Architecture: all
+Depends: ${misc:Depends}, ${python:Depends}, python-glue-import-hook, python-ligo-glue-common
+Description: Transitional metapackage for python-ligo-glue-common
+ Transitional metapackage to track rename to python-ligo-glue-common.
+
+Package: python3-glue-import-hook
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}
+Description: Python 3 import hook to ease rename from glue to ligo.glue
+ Maps importing glue to importing ligo.glue.
+
+Package: python3-glue
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, python3-ligo-glue, python3-ligo-glue-segments
+Replaces: glue
+Conflicts: glue
+Description: Transitional metapackage for python3-ligo-glue
+ Transitional metapackage to track rename to python3-ligo-glue.
+
+Package: python3-glue-segments
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, python3-glue-import-hook, python3-ligo-glue-segments
+Description: Transitional metapackage for python3-ligo-glue-segments
+ Transitional metapackage to track rename to python3-ligo-glue-segments.
+
+Package: python3-glue-common
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, python3-glue-import-hook, python3-ligo-glue-common
+Description: Transitional metapackage for python3-ligo-glue-segments
+ Transitional metapackage to track rename to python3-ligo-glue-segments.

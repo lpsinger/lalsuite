@@ -6,7 +6,7 @@
 
 
 
-Name: 		ligo-glue
+Name: 		glue
 Summary:	The Grid LSC User Environment
 Version:	1.54.0
 Release:	1%{?dist}
@@ -15,32 +15,38 @@ Group:		Development/Libraries
 Source:		%{name}-%{version}.tar.gz
 Url:		http://www.lsc-group.phys.uwm.edu/daswg/projects/glue.html
 BuildRoot:	%{_tmppath}/%{name}-%{version}-root
-Requires:	python-cjson m2crypto python-six ligo-common ligo-glue-common ligo-glue-segments python >= 2.6
-BuildRequires:  python-devel python-setuptools ligo-common
+Requires:	ligo-glue glue-common glue-segments python >= 2.7
+BuildRequires:  python-devel python-setuptools ligo-glue
 Prefix:         %{_glue_prefix}
 %description
-Glue (Grid LSC User Environment) is a suite of python modules and programs to
-allow users to run LSC codes on the grid.
+Transitional package for ligo-glue
+
+%package import-hook
+Summary:	Import hook to track rename from glue to ligo.glue
+Group:		Development/Libraries
+Requires:	python
+%description import-hook
+Transitional package to track rename from glue to ligo.glue.
 
 %package common
-Summary:	The common files needed for all sub-packages
+Summary:	Transitional package
 Group: 		Development/Libraries
-Requires: 	python ligo-common
+Requires: 	glue-import-hook ligo-glue-common
 %description common
-This is for the files that are common across the glue subpackages, namely git_version, iterutils and __init__.py
+Transitional package for ligo-glue-common
 
 %package segments
-Summary:        The segments subpackage
+Summary:        Transitional package
 Group:          Development/Libraries
-Requires:       python ligo-glue-common ligo-common
+Requires:       glue-import-hook ligo-glue-segments
 %description segments
-This is for the segments subpackage, written by Kipp.
+Transitional package for ligo-glue-segments
 
 %prep
 %setup 
 
 %build
-CFLAGS="%{optflags}" %{__python} setup.py build
+%{__python} setup.py build
 
 %install
 rm -rf %{buildroot}
@@ -48,51 +54,18 @@ rm -rf %{buildroot}
         --skip-build \
         --root=%{buildroot} \
         --prefix=%{_glue_prefix}
-rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/ligo_glue-%{version}-py2.?.egg-info
-rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/ligo_glue-%{version}-py2.?-nspkg.pth
+rm -rf $RPM_BUILD_ROOT/usr/lib64/python2.?/site-packages/glue-1.54.0-py2.?.egg-info
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
-%files
-%defattr(-,root,root)
-%{glue_python_sitearch}/ligo/glue/
-%{_glue_prefix}/bin/*
-%exclude %{_glue_prefix}/etc/
-%exclude %{_glue_prefix}/var/
-%exclude %{_glue_prefix}/share/nmi/lalsuite-build*
-%exclude %{glue_python_sitearch}/ligo/glue/__init__.py
-%exclude %{glue_python_sitearch}/ligo/glue/__init__.pyc
-%exclude %{glue_python_sitearch}/ligo/glue/segments.py
-%exclude %{glue_python_sitearch}/ligo/glue/iterutils.py
-%exclude %{glue_python_sitearch}/ligo/glue/git_version.py
-%exclude %{glue_python_sitearch}/ligo/glue/segments.pyc
-%exclude %{glue_python_sitearch}/ligo/glue/iterutils.pyc
-%exclude %{glue_python_sitearch}/ligo/glue/git_version.pyc
-%exclude %{glue_python_sitearch}/ligo/glue/__segments.so
-#%exclude %{_glue_prefix}/src/segments/
-#%exclude %{_glue_prefix}/test/segment_verify.py
-#%exclude %{_glue_prefix}/test/segmentsUtils_verify.py
-#%exclude %{_glue_prefix}/test/verifyutils.py
-
-%files segments
-%{glue_python_sitearch}/ligo/glue/segments.py
-%{glue_python_sitearch}/ligo/glue/segments.pyc
-%{glue_python_sitearch}/ligo/glue/__segments.so
-#%{glue_python_sitearch}/src/segments/
-#%{glue_python_sitearch}/test/segment_verify.py
-#%{glue_python_sitearch}/test/segmentsUtils_verify.py
-#%{glue_python_sitearch}/test/verifyutils.py
-
-%files common
-%{glue_python_sitearch}/ligo/glue/__init__.py
-%{glue_python_sitearch}/ligo/glue/__init__.pyc
-%{glue_python_sitearch}/ligo/glue/iterutils.pyc
-%{glue_python_sitearch}/ligo/glue/iterutils.py
-%{glue_python_sitearch}/ligo/glue/git_version.py
-%{glue_python_sitearch}/ligo/glue/git_version.pyc
+%files import-hook
+%{glue_python_sitearch}/glue/__init__.py
 
 %changelog
+* Thu Dec  1 2016 Leo Singer <leo.singer@ligo.org>
+- Create transitional package to track rename from glue to ligo.glue.
+
 * Wed Oct 19 2016 Ryan Fisher <rpfisher@syr.edu>
 - ER10 updated release. Python 3 compatibility from Leo, various updates from Kipp.
 
