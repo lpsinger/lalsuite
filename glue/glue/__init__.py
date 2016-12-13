@@ -9,7 +9,9 @@ from warnings import warn as _warn
 import sys as _sys
 
 
-_msg = '{0}: deprecated module, please import ligo.{0} instead.'
+def _complain(name):
+    _msg = '{0}: deprecated module, please import ligo.{0} instead.'
+    _warn(_msg.format(name), DeprecationWarning, 3)
 
 
 class _DeprecatedGlueImportHook(object):
@@ -22,7 +24,7 @@ class _DeprecatedGlueImportHook(object):
             return None
 
     def load_module(self, fullname):
-        _warn(_msg.format(fullname), stacklevel=2)
+        _complain(fullname)
         realname = 'ligo.' + fullname
         try:
             module = _sys.modules[realname]
@@ -31,6 +33,6 @@ class _DeprecatedGlueImportHook(object):
         return module
 
 
-_warn(_msg.format('glue'), stacklevel=2)
+_complain('glue')
 _sys.meta_path.append(_DeprecatedGlueImportHook())
 from ligo.glue import *
