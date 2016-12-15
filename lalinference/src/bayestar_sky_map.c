@@ -101,9 +101,11 @@
 
 /* Compute |z|^2. Hopefully a little faster than gsl_pow_2(cabs(z)), because no
  * square roots are necessary. */
+#pragma omp declare target
 static double cabs2(double complex z) {
     return gsl_pow_2(creal(z)) + gsl_pow_2(cimag(z));
 }
+#pragma omp end declare target
 
 
 /*
@@ -115,6 +117,7 @@ static double cabs2(double complex z) {
  *     t_2 = 1,  x_2 = x[2],
  *     t_3 = 2,  x_3 = x[3].
  */
+#pragma omp declare target
 static double complex complex_catrom(
     float complex x0,
     float complex x1,
@@ -127,6 +130,7 @@ static double complex complex_catrom(
         + t*(x0 - 2.5*x1 + 2.*x2 - 0.5*x3
         + t*(-0.5*x0 + 1.5*x1 - 1.5*x2 + 0.5*x3)));
 }
+#pragma omp end declare target
 
 
 /*
@@ -157,6 +161,7 @@ static double complex complex_catrom(
  * is reliably faster than the alternatives on Mac OS and Scientific Linux.
  *
  */
+#pragma omp declare target
 static double real_catrom(
     double x0,
     double x1,
@@ -182,11 +187,13 @@ static double real_catrom(
 
     return result;
 }
+#pragma omp end declare target
 
 
 /* Evaluate a complex time series using cubic spline interpolation, assuming
  * that the vector x gives the samples of the time series at times
  * 0, 1, ..., nsamples-1. */
+#pragma omp declare target
 static double complex eval_snr(
     const float complex *x,
     size_t nsamples,
@@ -210,6 +217,7 @@ static double complex eval_snr(
 
     return y;
 }
+#pragma omp end declare target
 
 
 typedef struct {
@@ -219,6 +227,7 @@ typedef struct {
 } cubic_interp;
 
 
+#pragma omp declare target
 static double cubic_interp_eval(const cubic_interp *interp, double x)
 {
     double i;
@@ -233,6 +242,7 @@ static double cubic_interp_eval(const cubic_interp *interp, double x)
 
     return real_catrom(y0, y1, y2, y3, u);
 }
+#pragma omp end declare target
 
 
 typedef struct {
@@ -242,6 +252,7 @@ typedef struct {
 } bicubic_interp;
 
 
+#pragma omp declare target
 static double bicubic_interp_eval(const bicubic_interp *interp, double x, double y)
 {
     double i, j;
@@ -265,6 +276,7 @@ static double bicubic_interp_eval(const bicubic_interp *interp, double x, double
 
     return real_catrom(z[0], z[1], z[2], z[3], u);
 }
+#pragma omp end declare target
 
 
 typedef struct {
@@ -514,6 +526,7 @@ static void log_radial_integrator_free(log_radial_integrator *integrator)
 }
 
 
+#pragma omp declare target
 static double log_radial_integrator_eval(const log_radial_integrator *integrator, double p, double b)
 {
     const double r0 = 2 * gsl_pow_2(p) / b;
@@ -551,9 +564,11 @@ static double log_radial_integrator_eval(const log_radial_integrator *integrator
 
     return result;
 }
+#pragma omp end declare target
 
 
 /* Find error in time of arrival. */
+#pragma omp declare target
 static void toa_errors(
     double *dt,
     double theta,
@@ -577,10 +592,12 @@ static void toa_errors(
         dt[i] = toas[i] + dot / LAL_C_SI;
     }
 }
+#pragma omp end declare target
 
 
 /* Compute antenna factors from the detector response tensor and source
  * sky location, and return as a complex number F_plus + i F_cross. */
+#pragma omp declare target
 static double complex complex_antenna_factor(
     const float response[3][3],
     double ra,
@@ -594,9 +611,11 @@ static double complex complex_antenna_factor(
         response, ra, dec, 0, gmst);
     return F;
 }
+#pragma omp end declare target
 
 
 /* Expression for complex amplitude on arrival (without 1/distance factor) */
+#pragma omp declare target
 static double complex signal_amplitude_model(
     double complex F,               /* Antenna factor */
     double complex exp_i_twopsi,    /* e^(i*2*psi), for polarization angle psi */
@@ -606,15 +625,19 @@ static double complex signal_amplitude_model(
     const double complex tmp = F * conj(exp_i_twopsi);
     return 0.5 * (1 + u2) * creal(tmp) - I * u * cimag(tmp);
 }
+#pragma omp end declare target
+
 
 
 static const unsigned int nglfixed = 10;
 static const unsigned int ntwopsi = 10;
 
 
+#pragma omp declare target
 static double complex exp_i(double phi) {
     return cos(phi) + I * sin(phi);
 }
+#pragma omp end declare target
 
 
 /* Data structure to store a pixel in an adaptively refined sky map. */
