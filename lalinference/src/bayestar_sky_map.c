@@ -873,7 +873,7 @@ double (*bayestar_sky_map_toa_phoa_snr(
 
     while (1)
     {
-        #pragma omp parallel for
+        #pragma omp target teams distribute parallel for
         for (unsigned long i = 0; i < npix0; i ++)
         {
             adaptive_sky_map_pixel *const pixel = &map->pixels[map->len - npix0 + i];
