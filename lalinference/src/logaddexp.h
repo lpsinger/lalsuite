@@ -34,6 +34,7 @@
  */
 
 
+#pragma omp declare target
 static double logaddexp(double x, double y)
 {
     const double tmp = x - y;
@@ -48,3 +49,4 @@ static double logaddexp(double x, double y)
         return x + y;
     }
 }
+#pragma omp end declare target
