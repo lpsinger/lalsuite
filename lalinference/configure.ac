@@ -144,6 +144,9 @@ AC_CHECK_LIB([m],[main],,[AC_MSG_ERROR([could not find the math library])])
 # check for OpenMP
 LALSUITE_ENABLE_OPENMP
 
+cfitsio=true
+LALSUITE_USE_CFITSIO
+
 # check for HEALPix
 PKG_CHECK_MODULES([CHEALPIX],[chealpix],[true],[false])
 LALSUITE_ADD_FLAGS([C],[${CHEALPIX_CFLAGS}],[${CHEALPIX_LIBS}])
