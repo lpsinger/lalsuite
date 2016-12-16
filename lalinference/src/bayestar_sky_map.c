@@ -268,10 +268,16 @@ static double bicubic_interp_eval(const bicubic_interp *interp, double x, double
 }
 
 
+#define log_radial_integrator_size 400
+
+
 typedef struct {
-    bicubic_interp *region0;
-    cubic_interp *region1;
-    cubic_interp *region2;
+    bicubic_interp region0;
+    double region0_data[log_radial_integrator_size][log_radial_integrator_size];
+    cubic_interp region1;
+    double region1_data[log_radial_integrator_size];
+    cubic_interp region2;
+    double region2_data[log_radial_integrator_size];
     double xmax, ymax, vmax, r1, r2;
     int k;
 } log_radial_integrator;
@@ -416,14 +422,8 @@ static double log_radial_integral(double r1, double r2, double p, double b, int 
 }
 
 
-static const size_t default_log_radial_integrator_size = 400;
-
-
-static log_radial_integrator *log_radial_integrator_init(double r1, double r2, int k, double pmax, size_t size)
+static void log_radial_integrator_init(log_radial_integrator *integrator, double r1, double r2, int k, double pmax)
 {
-    if (size <= 1)
-        XLAL_ERROR_NULL(XLAL_EINVAL, "size must be > 1");
-
     const double alpha = 4;
     const double p0 = 0.5 * (k >= 0 ? r2 : r1);
     const double xmax = log(pmax);
@@ -431,63 +431,47 @@ static log_radial_integrator *log_radial_integrator_init(double r1, double r2, i
     const double xmin = x0 - (1 + M_SQRT2) * alpha;
     const double ymax = x0 + alpha;
     const double ymin = 2 * x0 - M_SQRT2 * alpha - xmax;
-    const size_t len = size * size;
-    const double d = (xmax - xmin) / (size - 1); /* dx = dy = du */
+    const double d = (xmax - xmin) / (log_radial_integrator_size - 1); /* dx = dy = du */
     const double umin = - (1 + M_SQRT1_2) * alpha;
     const double vmax = x0 - M_SQRT1_2 * alpha;
     /* const double umax = xmax - vmax; */ /* unused */
 
-    log_radial_integrator *integrator = malloc(sizeof(log_radial_integrator));
-    void *region0 = malloc(sizeof(bicubic_interp) + len * sizeof(double));
-    void *region1 = malloc(sizeof(cubic_interp) + size * sizeof(double));
-    void *region2 = malloc(sizeof(cubic_interp) + size * sizeof(double));
-    if (!(integrator && region0 && region1 && region2))
-    {
-        free(integrator);
-        free(region0);
-        free(region1);
-        free(region2);
-        XLAL_ERROR_NULL(XLAL_ENOMEM, "not enough memory to allocate integrator");
-    }
-
-    integrator->region0 = region0;
-    integrator->region0->xsize = integrator->region0->ysize = size;
-    integrator->region0->xmin = xmin;
-    integrator->region0->ymin = ymin;
-    integrator->region0->dx = integrator->region0->dy = d;
+    integrator->region0.xsize = integrator->region0.ysize = log_radial_integrator_size;
+    integrator->region0.xmin = xmin;
+    integrator->region0.ymin = ymin;
+    integrator->region0.dx = integrator->region0.dy = d;
 
     #pragma omp parallel for
-    for (size_t i = 0; i < len; i ++)
+    for (size_t ix = 0; ix < log_radial_integrator_size; ix ++)
     {
-        const size_t ix = i / size;
-        const size_t iy = i % size;
-        const double x = xmin + ix * d;
-        const double y = ymin + iy * d;
-        const double p = exp(x);
-        const double r0 = exp(y);
-        const double b = 2 * gsl_pow_2(p) / r0;
-        /* Note: using this where p > r0; could reduce evaluations by half */
-        integrator->region0->z[i] = log_radial_integral(r1, r2, p, b, k);
+        for (size_t iy = 0; iy < log_radial_integrator_size; iy ++)
+        {
+            const double x = xmin + ix * d;
+            const double y = ymin + iy * d;
+            const double p = exp(x);
+            const double r0 = exp(y);
+            const double b = 2 * gsl_pow_2(p) / r0;
+            /* Note: using this where p > r0; could reduce evaluations by half */
+            integrator->region0_data[ix][iy] = log_radial_integral(r1, r2, p, b, k);
+        }
     }
 
-    integrator->region1 = region1;
-    integrator->region1->size = size;
-    integrator->region1->xmin = xmin;
-    integrator->region1->dx = d;
+    integrator->region1.size = log_radial_integrator_size;
+    integrator->region1.xmin = xmin;
+    integrator->region1.dx = d;
 
-    for (size_t i = 0; i < size; i ++)
+    for (size_t i = 0; i < log_radial_integrator_size; i ++)
     {
-        integrator->region1->y[i] = integrator->region0->z[i * size + (size - 1)];
+        integrator->region1_data[i] = integrator->region0_data[i][log_radial_integrator_size - 1];
     }
 
-    integrator->region2 = region2;
-    integrator->region2->size = size;
-    integrator->region2->xmin = umin;
-    integrator->region2->dx = d;
+    integrator->region2.size = log_radial_integrator_size;
+    integrator->region2.xmin = umin;
+    integrator->region2.dx = d;
 
-    for (size_t i = 0; i < size; i ++)
+    for (size_t i = 0; i < log_radial_integrator_size; i ++)
     {
-        integrator->region2->y[i] = integrator->region0->z[i * size + (size - 1 - i)];
+        integrator->region2_data[i] = integrator->region0_data[i][log_radial_integrator_size - 1 - i];
     }
 
     integrator->xmax = xmax;
@@ -496,22 +480,6 @@ static log_radial_integrator *log_radial_integrator_init(double r1, double r2, i
     integrator->r1 = r1;
     integrator->r2 = r2;
     integrator->k = k;
-    return integrator;
-}
-
-
-static void log_radial_integrator_free(log_radial_integrator *integrator)
-{
-    if (integrator)
-    {
-        free(integrator->region0);
-        integrator->region0 = NULL;
-        free(integrator->region1);
-        integrator->region1 = NULL;
-        free(integrator->region2);
-        integrator->region2 = NULL;
-        free(integrator);
-    }
 }
 
 
@@ -536,15 +504,15 @@ static double log_radial_integrator_eval(const log_radial_integrator *integrator
         }
     } else {
         if (y >= integrator->ymax) {
-            result = cubic_interp_eval(integrator->region1, x);
+            result = cubic_interp_eval(&integrator->region1, x);
         } else {
             const double v = 0.5 * (x + y);
             if (v <= integrator->vmax)
             {
                 const double u = 0.5 * (x - y);
-                result = cubic_interp_eval(integrator->region2, u);
+                result = cubic_interp_eval(&integrator->region2, u);
             } else {
-                result = bicubic_interp_eval(integrator->region0, x, y);
+                result = bicubic_interp_eval(&integrator->region0, x, y);
             }
         }
         result += gsl_pow_2(0.5 * b / p);
@@ -736,7 +704,7 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
     const double **locations,       /* Barycentered Cartesian geographic detector positions (m) */
     const double *horizons          /* SNR=1 horizon distances for each detector */
 ) {
-    log_radial_integrator *integrators[] = {NULL, NULL, NULL};
+    log_radial_integrator integrators[3];
     {
         double pmax = 0;
         for (unsigned int iifo = 0; iifo < nifos; iifo ++)
@@ -746,15 +714,8 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
         pmax = sqrt(0.5 * pmax);
         for (unsigned char k = 0; k < 3; k ++)
         {
-            integrators[k] = log_radial_integrator_init(
-                min_distance, max_distance, prior_distance_power + k, pmax,
-                default_log_radial_integrator_size);
-            if (!integrators[k])
-            {
-                for (unsigned char kk = 0; kk < k; kk ++)
-                    log_radial_integrator_free(integrators[kk]);
-                return NULL;
-            }
+            log_radial_integrator_init(&integrators[k],
+                min_distance, max_distance, prior_distance_power + k, pmax);
         }
     }
 
@@ -763,11 +724,7 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
     size_t len;
     bayestar_pixel *pixels = bayestar_pixels_alloc(&len, order0);
     if (!pixels)
-    {
-        for (unsigned char k = 0; k < 3; k ++)
-            log_radial_integrator_free(integrators[k]);
         return NULL;
-    }
     const unsigned long npix0 = len;
 
     /* Look up Gauss-Legendre quadrature rule for integral over cos(i). */
@@ -857,7 +814,7 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
                         for (unsigned char k = 0; k < 3; k ++)
                         {
                             double result = log_radial_integrator_eval(
-                                integrators[k], p, b);
+                                &integrators[k], p, b);
                             accum2[k] = logaddexp(accum2[k], result);
                         }
                     }
@@ -893,9 +850,6 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
         if (!pixels)
             return NULL;
     }
-
-    for (unsigned char k = 0; k < 3; k ++)
-        log_radial_integrator_free(integrators[k]);
 
     /* Rescale so that log(max) = 0. */
     const double max_logp = pixels[len - 1].value[0];
@@ -1386,21 +1340,15 @@ static void test_log_radial_integral(
     double expected, double tol, double r1, double r2, double p2, double b, int k)
 {
     const double p = sqrt(p2);
-    log_radial_integrator *integrator = log_radial_integrator_init(
-        r1, r2, k, p + 0.5, default_log_radial_integrator_size);
+    log_radial_integrator integrator;
+    log_radial_integrator_init(&integrator, r1, r2, k, p + 0.5);
 
-    gsl_test(!integrator, "testing that integrator object is non-NULL");
-    if (integrator)
-    {
-        const double result = log_radial_integrator_eval(integrator, p, b);
+    const double result = log_radial_integrator_eval(&integrator, p, b);
 
-        gsl_test_rel(
-            result, expected, tol,
-            "testing toa_phoa_snr_log_radial_integral("
-            "r1=%g, r2=%g, p2=%g, b=%g, k=%d)", r1, r2, p2, b, k);
-
-        log_radial_integrator_free(integrator);
-    }
+    gsl_test_rel(
+        result, expected, tol,
+        "testing toa_phoa_snr_log_radial_integral("
+        "r1=%g, r2=%g, p2=%g, b=%g, k=%d)", r1, r2, p2, b, k);
 }
 
 
@@ -1511,27 +1459,22 @@ int bayestar_test(void)
         const double r1 = 0.0, r2 = 0.25, pmax = 1.0;
         const int k = 2;
         const double tol = 1e-5;
-        log_radial_integrator *integrator = log_radial_integrator_init(
-            r1, r2, k, pmax, default_log_radial_integrator_size);
+        log_radial_integrator integrator;
+        log_radial_integrator_init(&integrator, r1, r2, k, pmax);
 
-        gsl_test(!integrator, "testing that integrator object is non-NULL");
-        if (integrator)
+        for (double p = 0.01; p <= pmax; p += 0.01)
         {
-            for (double p = 0.01; p <= pmax; p += 0.01)
+            for (double b = 0.0; b <= 2 * pmax; b += 0.01)
             {
-                for (double b = 0.0; b <= 2 * pmax; b += 0.01)
-                {
-                    const double r0 = 2 * gsl_pow_2(p) / b;
-                    const double x = log(p);
-                    const double y = log(r0);
-                    const double expected = exp(log_radial_integral(r1, r2, p, b, k));
-                    const double result = exp(log_radial_integrator_eval(integrator, p, b) - gsl_pow_2(0.5 * b / p));
-                    gsl_test_abs(
-                        result, expected, tol, "testing log_radial_integrator_eval("
-                        "r1=%g, r2=%g, p=%g, b=%g, k=%d, x=%g, y=%g)", r1, r2, p, b, k, x, y);
-                }
+                const double r0 = 2 * gsl_pow_2(p) / b;
+                const double x = log(p);
+                const double y = log(r0);
+                const double expected = exp(log_radial_integral(r1, r2, p, b, k));
+                const double result = exp(log_radial_integrator_eval(&integrator, p, b) - gsl_pow_2(0.5 * b / p));
+                gsl_test_abs(
+                    result, expected, tol, "testing log_radial_integrator_eval("
+                    "r1=%g, r2=%g, p=%g, b=%g, k=%d, x=%g, y=%g)", r1, r2, p, b, k, x, y);
             }
-            log_radial_integrator_free(integrator);
         }
     }
 
