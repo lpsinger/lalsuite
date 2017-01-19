@@ -633,48 +633,31 @@ static void bayestar_pixels_sort_uniq(bayestar_pixel *pixels, size_t len)
 }
 
 
-static void *realloc_or_free(void *ptr, size_t size)
-{
-    void *new_ptr = realloc(ptr, size);
-    if (!new_ptr)
-    {
-        free(ptr);
-        XLAL_ERROR_NULL(XLAL_ENOMEM, "not enough memory to resize array");
-    }
-    return new_ptr;
-}
-
-
 /* Subdivide the final last_n pixels of an adaptively refined sky map. */
-static bayestar_pixel *bayestar_pixels_refine(
+static void bayestar_pixels_refine(
     bayestar_pixel *pixels, size_t *len, size_t last_n
 ) {
-    assert(last_n <= *len);
-
     /* New length: adding 4*last_n new pixels, removing last_n old pixels. */
     const size_t new_len = *len + 3 * last_n;
-    const size_t new_size = new_len * sizeof(bayestar_pixel);
 
-    pixels = realloc_or_free(pixels, new_size);
-    if (pixels)
+    for (size_t i = 0; i < last_n; i ++)
     {
-        for (size_t i = 0; i < last_n; i ++)
-        {
-            const uint64_t uniq = 4 * pixels[*len - i - 1].uniq;
-            for (unsigned char j = 0; j < 4; j ++)
-                pixels[new_len - (4 * i + j) - 1].uniq = j + uniq;
-        }
-        *len = new_len;
+        const uint64_t uniq = 4 * pixels[*len - i - 1].uniq;
+        for (unsigned char j = 0; j < 4; j ++)
+            pixels[new_len - (4 * i + j) - 1].uniq = j + uniq;
     }
-    return pixels;
+    *len = new_len;
 }
 
 
-static bayestar_pixel *bayestar_pixels_alloc(size_t *len, unsigned char order)
+static bayestar_pixel *bayestar_pixels_alloc(size_t *len, unsigned char order, unsigned char max_order)
 {
     const uint64_t nside = (uint64_t)1 << order;
     const uint64_t npix = nside2npix64(nside);
-    const size_t size = npix * sizeof(bayestar_pixel);
+    uint64_t capacity = npix;
+    for (unsigned char o = order; o <= max_order; o ++)
+        capacity = capacity + 3 * npix;
+    const size_t size = capacity * sizeof(bayestar_pixel);
 
     bayestar_pixel *pixels = malloc(size);
     if (!pixels)
@@ -720,9 +703,10 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
     }
 
     static const unsigned char order0 = 4;
+    static const unsigned char max_order = 11;
     unsigned char level = order0;
     size_t len;
-    bayestar_pixel *pixels = bayestar_pixels_alloc(&len, order0);
+    bayestar_pixel *pixels = bayestar_pixels_alloc(&len, order0, max_order);
     if (!pixels)
         return NULL;
     const unsigned long npix0 = len;
@@ -842,13 +826,11 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
         bayestar_pixels_sort_prob(pixels, len);
 
         /* If we have reached order=11 (nside=2048), stop. */
-        if (level++ >= 11)
+        if (level++ >= max_order)
             break;
 
         /* Adaptively refine the pixels that contain the most probability. */
-        pixels = bayestar_pixels_refine(pixels, &len, npix0 / 4);
-        if (!pixels)
-            return NULL;
+        bayestar_pixels_refine(pixels, &len, npix0 / 4);
     }
 
     /* Rescale so that log(max) = 0. */
