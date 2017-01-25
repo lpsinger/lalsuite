@@ -56,8 +56,8 @@ parser = command.ArgumentParser(
     parents=[command.waveform_parser, command.prior_parser, command.skymap_parser])
 parser.add_argument('-N', '--dry-run', default=False, action='store_true',
     help='Dry run; do not update GraceDB entry [default: %(default)s]')
-parser.add_argument('-o', '--output', metavar='FILE.fits[.gz]',
-    default='bayestar.fits.gz',
+parser.add_argument('-o', '--output', metavar='FILE.fits',
+    default='bayestar.fits',
     help='Name for uploaded file [default: %(default)s]')
 parser.add_argument('graceid', metavar='G123456', nargs='*',
     help='Run on this GraceDB ID [default: listen to lvalert]')
@@ -73,7 +73,7 @@ import os
 import shutil
 import sys
 import tempfile
-from lalinference.bayestar.sky_map import gracedb_sky_map, rasterize
+from lalinference.bayestar.sky_map import gracedb_sky_map
 from lalinference.io import fits
 import ligo.gracedb.logging
 import ligo.gracedb.rest
@@ -116,12 +116,12 @@ for graceid in graceids:
 
         # perform sky localization
         log.info("starting sky localization")
-        sky_map = rasterize(gracedb_sky_map(
+        sky_map = gracedb_sky_map(
             coinc_file, psd_file, opts.waveform, opts.f_low,
             opts.min_distance, opts.max_distance, opts.prior_distance_power,
             nside=opts.nside, f_high_truncate=opts.f_high_truncate,
             method=opts.method, chain_dump=chain_dump,
-            enable_snr_series=opts.enable_snr_series))
+            enable_snr_series=opts.enable_snr_series)
         sky_map.meta['objid'] = str(graceid)
         sky_map.meta['url'] = 'https://gracedb.ligo.org/events/{0}'.format(graceid)
         log.info("sky localization complete")
