@@ -94,8 +94,6 @@
 #include <gsl/gsl_sf_gamma.h>
 #include <gsl/gsl_test.h>
 
-#include "logaddexp.h"
-
 #ifndef _OPENMP
 #define omp ignore
 #endif
@@ -647,18 +645,35 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
     }
     const unsigned long npix0 = len;
 
-    /* Look up Gauss-Legendre quadrature rule for integral over cos(i). */
-    gsl_integration_glfixed_table *gltable
-        = gsl_integration_glfixed_table_alloc(nglfixed);
+    double u_points_weights[nglfixed][2];
+    {
+        /* Look up Gauss-Legendre quadrature rule for integral over cos(i). */
+        gsl_integration_glfixed_table *gltable
+            = gsl_integration_glfixed_table_alloc(nglfixed);
 
-    /* Don't bother checking the return value. GSL has static, precomputed
-     * values for certain orders, and for the order I have picked it will
-     * return a pointer to one of these. See:
-     *
-     * http://git.savannah.gnu.org/cgit/gsl.git/tree/integration/glfixed.c
-     */
-    assert(gltable);
-    assert(gltable->precomputed); /* We don't have to free it. */
+       /* Don't bother checking the return value. GSL has static, precomputed
+        * values for certain orders, and for the order I have picked it will
+        * return a pointer to one of these. See:
+        *
+        * http://git.savannah.gnu.org/cgit/gsl.git/tree/integration/glfixed.c
+        */
+       assert(gltable);
+       assert(gltable->precomputed); /* We don't have to free it. */
+
+       for (unsigned int iu = 0; iu < nglfixed; iu ++)
+       {
+           /* Look up Gauss-Legendre abscissa and weight. */
+           int ret = gsl_integration_glfixed_point(
+               -1, 1, iu, &u_points_weights[iu][0],
+               &u_points_weights[iu][1], gltable);
+
+           /* Don't bother checking return value; the only
+            * possible failure is in index bounds checking. */
+           assert(ret == GSL_SUCCESS);
+
+           u_points_weights[iu][1] = log(u_points_weights[iu][1]);
+       }
+    }
 
     while (1)
     {
@@ -668,7 +683,9 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
             bayestar_pixel *const pixel = &pixels[len - npix0 + i];
             double complex F[nifos];
             double dt[nifos];
-            double accum[3] = {-INFINITY, -INFINITY, -INFINITY};
+            const unsigned long n_logp = ntwopsi * nglfixed * nsamples;
+            double logp[ntwopsi][nglfixed][nsamples][3];
+            double (*logp_flat)[3] = **logp;
 
             {
                 double theta, phi;
@@ -687,23 +704,12 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
             {
                 const double twopsi = (2 * M_PI / ntwopsi) * itwopsi;
                 const double complex exp_i_twopsi = exp_i(twopsi);
-                double accum1[3] = {-INFINITY, -INFINITY, -INFINITY};
 
                 /* Integrate over u from -1 to 1. */
                 for (unsigned int iu = 0; iu < nglfixed; iu++)
                 {
-                    double u, weight;
-                    double accum2[nsamples][3];
-
-                    {
-                        /* Look up Gauss-Legendre abscissa and weight. */
-                        int ret = gsl_integration_glfixed_point(
-                            -1, 1, iu, &u, &weight, gltable);
-
-                        /* Don't bother checking return value; the only
-                         * possible failure is in index bounds checking. */
-                        assert(ret == GSL_SUCCESS);
-                    }
+                    const double u = u_points_weights[iu][0];
+                    const double log_weight = u_points_weights[iu][1];
                     const double u2 = gsl_pow_2(u);
                     double complex z_times_r[nifos];
                     double p2 = 0;
@@ -736,35 +742,25 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
 
                         for (unsigned char k = 0; k < 3; k ++)
                         {
-                            accum2[isample][k] = log_radial_integrator_eval(
-                                integrators[k], p, b, log_p, log_b);
+                            logp[itwopsi][iu][isample][k] =
+                                log_radial_integrator_eval(
+                                integrators[k], p, b, log_p, log_b) + log_weight;
                         }
                     }
-
-                    double max_accum2[3] = {-INFINITY, -INFINITY, -INFINITY};
-                    for (unsigned long isample = 0; isample < nsamples; isample ++)
-                        for (unsigned char k = 0; k < 3; k ++)
-                            if (accum2[isample][k] > max_accum2[k])
-                                max_accum2[k] = accum2[isample][k];
-                    double sum_accum2[3] = {0, 0, 0};
-                    for (unsigned long isample = 0; isample < nsamples; isample ++)
-                        for (unsigned char k = 0; k < 3; k ++)
-                            sum_accum2[k] += exp(accum2[isample][k] - max_accum2[k]);
-                    for (unsigned char k = 0; k < 3; k ++)
-                        accum1[k] = logaddexp(accum1[k], log(sum_accum2[k] * weight) + max_accum2[k]);
                 }
+            }
 
+            double max_logp[3] = {-INFINITY, -INFINITY, -INFINITY};
+            for (unsigned long i_logp = 0; i_logp < n_logp; i_logp ++)
                 for (unsigned char k = 0; k < 3; k ++)
-                {
-                    accum[k] = logaddexp(accum[k], accum1[k]);
-                }
-            }
-
-            /* Record logarithm base 4 of posterior. */
+                    if (logp_flat[i_logp][k] > max_logp[k])
+                                max_logp[k] = logp_flat[i_logp][k];
+            double sum_p[3] = {0, 0, 0};
+            for (unsigned long i_logp = 0; i_logp < n_logp; i_logp ++)
+                for (unsigned char k = 0; k < 3; k ++)
+                    sum_p[k] += exp(logp_flat[i_logp][k] - max_logp[k]);
             for (unsigned char k = 0; k < 3; k ++)
-            {
-                pixel->value[k] = accum[k];
-            }
+                pixel->value[k] = log(sum_p[k]) + max_logp[k];
         }
 
         /* Sort pixels by ascending posterior probability. */
