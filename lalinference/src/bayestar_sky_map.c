@@ -619,7 +619,7 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
             pmax += gsl_pow_2(horizons[iifo] / max_distance);
         }
         pmax = sqrt(0.5 * pmax);
-        for (unsigned char k = 0; k < 3; k ++)
+        for (unsigned char k = 0; k < 1; k ++)
         {
             integrators[k] = log_radial_integrator_init(
                 min_distance, max_distance, prior_distance_power + k, pmax,
@@ -740,12 +740,14 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
                         }
                         const double log_b = log(b);
 
-                        for (unsigned char k = 0; k < 3; k ++)
+                        for (unsigned char k = 0; k < 1; k ++)
                         {
                             logp[itwopsi][iu][isample][k] =
                                 log_radial_integrator_eval(
                                 integrators[k], p, b, log_p, log_b) + log_weight;
                         }
+                        logp[itwopsi][iu][isample][1] = GSL_NAN;
+                        logp[itwopsi][iu][isample][2] = GSL_NAN;
                     }
                 }
             }
