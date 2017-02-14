@@ -307,6 +307,32 @@ HDF5 support is being disabled (equivalent to --with-hdf5=no).
             with_hdf5_fortran="no"
         fi
 
+	dnl
+	dnl Strip out -I/usr/include, -L/usr/lib, and -L/usr/lib64
+	dnl that wreak havoc when there are multiple versions of LALSuite
+	dnl on the system.
+	dnl
+	dnl FIXME: This is probably a bug in HDF5 itself or the HDF5
+	dnl packaging. If HDF5 used pkg-config, then it would take care
+	dnl of this automatically.
+	dnl
+	for HDF5_flag in HDF5_CC HDF5_CFLAGS HDF5_CPPFLAGS HDF5_LDFLAGS HDF5_LIBS HDF5_FC HDF5_FFLAGS HDF5_FLIBS
+	do
+		eval HDF5_tmp_flags=\"\$$HDF5_flag\"
+		eval $HDF5_flag=\"\"
+		for arg in $HDF5_tmp_flags
+		do
+			case $arg in #(
+				-I/usr/include|-L/usr/lib|-L/usr/lib64)
+					;; #(
+				*)
+					eval $HDF5_flag=\"\$$HDF5_flag \$arg\"
+					;;
+			esac
+		done
+		eval HDF5_tmp_flags=\"\$$HDF5_flag\"
+	done
+
 	AC_SUBST([HDF5_VERSION])
 	AC_SUBST([HDF5_CC])
 	AC_SUBST([HDF5_CFLAGS])
