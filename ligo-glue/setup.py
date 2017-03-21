@@ -14,6 +14,7 @@ from distutils.command import build_py
 from distutils.command import sdist
 from distutils.command import clean
 from distutils import log
+from distutils import sysconfig
 
 from misc import generate_vcs_info as gvcsi
 
@@ -196,6 +197,15 @@ class glue_sdist(sdist.sdist):
     # now run sdist
     sdist.sdist.run(self)
 
+# Workaround for namespace packages in both
+# lib/pythonX.Y/site-packages and lib64/pythonX.Y/site-packages
+# on Scientific Linux.
+# See <https://bugzilla.redhat.com/show_bug.cgi?id=1076293>.
+if sysconfig.get_python_lib() == sysconfig.get_python_lib(1):
+  namespace_packages = ['ligo']
+else:
+  namespace_packages = []
+
 setup(
   name = "ligo-glue",
   version = ver,
@@ -204,8 +214,8 @@ setup(
   description = "Grid LSC User Engine",
   url = "http://www.lsc-group.phys.uwm.edu/daswg/",
   license = 'See file LICENSE',
-  namespace_packages = ['ligo'],
-  packages = [ 'ligo.glue', 'ligo.glue.ligolw', 'ligo.glue.ligolw.utils', 'ligo.glue.segmentdb', 'ligo.glue.nmi', 'ligo.glue.auth'],
+  namespace_packages = namespace_packages,
+  packages = [ 'ligo', 'ligo.glue', 'ligo.glue.ligolw', 'ligo.glue.ligolw.utils', 'ligo.glue.segmentdb', 'ligo.glue.nmi', 'ligo.glue.auth'],
   cmdclass = {
     'build_py' : glue_build_py,
     'install' : glue_install,
