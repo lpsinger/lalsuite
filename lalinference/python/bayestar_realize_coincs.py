@@ -86,9 +86,8 @@ parser.add_argument(
     help='Override low frequency cutoff found in sim_inspiral table')
 parser.add_argument(
     '--f-max', type=float,
-    help='Override maximum frequency cutoff found in sim_inspiral table')
+    help='Override high frequency cutoff found in sim_inspiral table')
 opts = parser.parse_args()
-
 
 
 # Python standard library imports.
@@ -324,6 +323,7 @@ for sim_inspiral in progress.iterate(sim_inspiral_table):
         sngl_inspiral.snr = abs_snr
         sngl_inspiral.coa_phase = np.angle(np.exp(1j * arg_snr))
         sngl_inspiral.eff_distance = horizon / sngl_inspiral.snr
+        sngl_inspiral.f_max = f_max
         sngl_inspirals.append(sngl_inspiral)
 
         used_locations.append(locations)
