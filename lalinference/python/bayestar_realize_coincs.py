@@ -84,7 +84,11 @@ parser.add_argument(
 parser.add_argument(
     '--f-low', type=float,
     help='Override low frequency cutoff found in sim_inspiral table')
+parser.add_argument(
+    '--f-max', type=float,
+    help='Override maximum frequency cutoff found in sim_inspiral table')
 opts = parser.parse_args()
+
 
 
 # Python standard library imports.
@@ -200,6 +204,7 @@ for sim_inspiral in progress.iterate(sim_inspiral_table):
     m1 = sim_inspiral.mass1
     m2 = sim_inspiral.mass2
     f_low = sim_inspiral.f_lower if opts.f_low is None else opts.f_low
+    f_max = 2048 if opts.f_max is None else opts.f_max
     DL = sim_inspiral.distance
     ra = sim_inspiral.longitude
     dec = sim_inspiral.latitude
@@ -233,7 +238,7 @@ for sim_inspiral in progress.iterate(sim_inspiral_table):
         spin2x=sim_inspiral.spin2x,
         spin2y=sim_inspiral.spin2y,
         spin2z=sim_inspiral.spin2z,
-        f_min=f_low)
+        f_min=f_low, f_max=f_max)
     W = [filter.signal_psd_series(H, psds[ifo]) for ifo in opts.detector]
     signal_models = [timing.SignalModel(_) for _ in W]
 
