@@ -124,7 +124,7 @@ for graceid, event in events.gracedb.open(gracedb, graceids).items():
             opts.max_distance, opts.prior_distance_power, opts.cosmology,
             method=opts.method, nside=opts.nside,
             chain_dump=chain_dump, enable_snr_series=opts.enable_snr_series,
-            f_high_truncate=opts.f_high_truncate))
+            f_high_truncate=opts.f_high_truncate, f_max=opts.f_max))
         sky_map.meta['objid'] = str(graceid)
         sky_map.meta['url'] = 'https://gracedb.ligo.org/events/{0}'.format(
             graceid)

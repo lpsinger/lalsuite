@@ -103,6 +103,9 @@ group.add_argument(
     '--f-low', type=float, metavar='Hz', default=30,
     help='Low frequency cutoff [default: %(default)s]')
 group.add_argument(
+    '--f-max', type=float, metavar='Hz', default=2048,
+    help='High frequency cutoff [default: %(default)s]')
+group.add_argument(
     '--f-high-truncate', type=float, default=0.95,
     help='Truncate waveform at this fraction of the maximum frequency of the '
     'PSD [default: %(default)s]')

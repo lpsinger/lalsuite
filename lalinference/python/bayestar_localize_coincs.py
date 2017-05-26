@@ -150,7 +150,7 @@ for int_coinc_event_id, event in event_source.items():
                 opts.max_distance, opts.prior_distance_power, opts.cosmology,
                 method=method, nside=opts.nside, chain_dump=chain_dump,
                 enable_snr_series=opts.enable_snr_series,
-                f_high_truncate=opts.f_high_truncate)
+                f_high_truncate=opts.f_high_truncate, f_max=opts.f_max)
             sky_map.meta['objid'] = coinc_event_id
         except (ArithmeticError, ValueError):
             log.exception(

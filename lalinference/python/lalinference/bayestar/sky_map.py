@@ -135,7 +135,7 @@ def localize(
         event, waveform, f_low,
         min_distance=None, max_distance=None, prior_distance_power=None,
         cosmology=False, method='toa_phoa_snr', nside=-1, chain_dump=None,
-        enable_snr_series=False, f_high_truncate=1.0):
+        enable_snr_series=False, f_high_truncate=1.0, f_max=2048):
     """Convenience function to produce a sky map from LIGO-LW rows. Note that
     min_distance and max_distance should be in Mpc.
 
@@ -163,7 +163,7 @@ def localize(
                                    for psd in psds]
 
     log.debug('calculating templates')
-    H = filter.sngl_inspiral_psd(waveform, f_min=f_low, **event.template_args)
+    H = filter.sngl_inspiral_psd(waveform, f_min=f_low, f_max=f_max, **event.template_args)
 
     log.debug('calculating noise PSDs')
     HS = [filter.signal_psd_series(H, S) for S in psds]
