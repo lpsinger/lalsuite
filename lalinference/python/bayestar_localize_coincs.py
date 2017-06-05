@@ -38,6 +38,70 @@ A FITS file is created for each sky map, having a filename of the form
 where X is the LIGO-LW row id of the coinc and "toa" or "toa_phoa_snr"
 identifies whether the sky map accounts for times of arrival (TOA),
 PHases on arrival (PHOA), and amplitudes on arrival (SNR).
+
+OpenMP and MPI Parallelism
+--------------------------
+
+bayestar_localize_coincs supports two kinds of parallelism: OpenMP and MPI.
+With OpenMP, BAYESTAR uses multiple cores on the current machine to speed up
+numerically intensive calculations for each sky map. With MPI, BAYESTAR uses
+multiple machines to evaluate many sky maps at once. It is possible to use
+both OpenMP and MPI at the same time, but usually it is best to use only
+OpenMP if you are using a single workstation or only MPI if you are submitting
+jobs to a computing cluster.
+
+The number of OpenMP threads is set by the OMP_NUM_THREADS environment
+variable. If not set, then the default is the number of cores. Here is
+an example of running BAYESTAR with OpenMP and 8 threads:
+
+    $ export OMP_NUM_THREADS=8
+    $ bayestar_localize_coincs coinc.xml
+
+or equivalently:
+
+    $ OMP_NUM_THREADS=8 bayestar_localize_coincs coinc.xml
+
+Running BAYESTAR with MPI requires launching bayestar_localize_coincs
+using mpiexec, which is a standard tool that is included with any MPI
+installation. It also requires the latest development version of mpi4py
+(pip install --user git+https://github.com/mpi4py/mpi4py). Here is an
+example of running BAYESTAR using 8 processes and no OpenMP threads:
+
+    $ OMP_NUM_THREADS=1 mpiexec -n 8 bayestar_localize_coincs coinc.xml
+
+Of course you can use both OpenMP and MPI:
+
+    $ OMP_NUM_THREADS=8 mpiexec -n 8 bayestar_localize_coincs coinc.xml
+
+Submission to an HTCondor cluster
+---------------------------------
+Here is an example HTCondor submit file, bayestar.sub (doesn't work yet).
+
+    universe = parallel
+    getenv = true
+    machine_count = 32
+    request_memory = 1000 MB
+    executable = /usr/bin/env
+    arguments = "mpiexec -n $(machine_count) bayestar_localize_coincs coinc.xml"
+    error = $(Node).err
+    log = $(Node).log
+    queue
+
+Submit with:
+
+    $ condor_submit bayestar.sub
+
+Submission to a PBS cluster
+---------------------------
+Here is an example PBS submit script, bayestar.pbs, for NASA's Pleiades
+supercomputer (https://www.nas.nasa.gov/hecc/resources/pleiades.html).
+
+    #PBS -V -S /bin/sh -l select=4:ncpus=16:mpiprocs=16:ompthreads=1:model=san
+    mpiexec bayestar_localize_coincs coinc.xml
+
+Submit with:
+
+    $ qsub bayestar.pbs
 """
 
 
@@ -57,9 +121,6 @@ parser = command.ArgumentParser(
     parents=[
         command.waveform_parser, command.prior_parser, command.skymap_parser])
 parser.add_argument(
-    '--keep-going', '-k', default=False, action='store_true',
-    help='Keep processing events if a sky map fails to converge [default: no]')
-parser.add_argument(
     'input', metavar='INPUT.xml[.gz]', default='-', nargs='+',
     type=argparse.FileType('rb'),
     help='Input LIGO-LW XML file [default: stdin] or PyCBC HDF5 files. '
@@ -75,14 +136,8 @@ parser.add_argument(
     '--pycbc-sample', default='foreground',
     help='sample population [PyCBC only; default: %(default)s]')
 parser.add_argument(
-    '--coinc-event-id', type=int, nargs='*',
-    help='run on only these specified events')
-parser.add_argument(
     '--output', '-o', default='.',
     help='output directory [default: current directory]')
-parser.add_argument(
-    '--condor-submit', action='store_true',
-    help='submit to Condor instead of running locally')
 opts = parser.parse_args()
 
 #
@@ -98,9 +153,8 @@ from lalinference.bayestar.sky_map import localize
 
 # Other imports.
 import os
-from collections import OrderedDict
-import sys
 import six
+from functools import partial
 
 # Squelch annoying and uniformative LAL log messages.
 import lal
@@ -112,33 +166,10 @@ event_source = events.open(*opts.input, sample=opts.pycbc_sample)
 
 command.mkpath(opts.output)
 
-if opts.condor_submit:
-    if opts.coinc_event_id:
-        raise ValueError('must not set --coinc-event-id with --condor-submit')
-    cmd = ['condor_submit', 'accounting_group=ligo.dev.o3.cbc.pe.bayestar',
-           'on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)',
-           'on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)',
-           'on_exit_hold_reason = (ExitBySignal == True ? strcat("The job exited with signal ", ExitSignal) : strcat("The job exited with signal ", ExitCode))',
-           'request_memory = 1000 MB',
-           'universe=vanilla', 'getenv=true', 'executable=' + sys.executable,
-           'JobBatchName=BAYESTAR', 'environment="OMP_NUM_THREADS=1"',
-           'error=' + os.path.join(opts.output, '$(CoincEventId).err'),
-           'log=' + os.path.join(opts.output, '$(CoincEventId).log'),
-           'arguments="-B ' + ' '.join(arg for arg in sys.argv
-               if arg != '--condor-submit') + ' --coinc-event-id $(CoincEventId)"',
-           '-append', 'queue CoincEventId in ' + ' '.join(
-               str(coinc_event_id) for coinc_event_id in event_source),
-           '/dev/null']
-    os.execvp('condor_submit', cmd)
 
-# Loop over all coinc_event <-> sim_inspiral coincs.
-if opts.coinc_event_id:
-    event_source = OrderedDict(
-        (key, event_source[key]) for key in opts.coinc_event_id)
+def process(opts, int_coinc_event_id):
+    event = event_source[int_coinc_event_id]
 
-count_sky_maps_failed = 0
-
-for int_coinc_event_id, event in six.iteritems(event_source):
     coinc_event_id = 'coinc_event:coinc_event_id:{}'.format(int_coinc_event_id)
 
     # Loop over sky localization methods
@@ -148,29 +179,31 @@ for int_coinc_event_id, event in six.iteritems(event_source):
             chain_dump = '%s.chain.npy' % int_coinc_event_id
         else:
             chain_dump = None
-        try:
-            sky_map = localize(
-                event, opts.waveform, opts.f_low, opts.min_distance,
-                opts.max_distance, opts.prior_distance_power, opts.cosmology,
-                method=method, nside=opts.nside, chain_dump=chain_dump,
-                enable_snr_series=opts.enable_snr_series,
-                f_high_truncate=opts.f_high_truncate)
-            sky_map.meta['objid'] = coinc_event_id
-        except (ArithmeticError, ValueError):
-            log.exception(
-                "%s:method '%s':sky localization failed",
-                coinc_event_id, method)
-            count_sky_maps_failed += 1
-            if not opts.keep_going:
-                raise
-        else:
-            log.info(
-                "%s:method '%s':saving sky map",
-                coinc_event_id, method)
-            filename = '%d.%s.fits' % (int_coinc_event_id, method)
-            fits.write_sky_map(
-                os.path.join(opts.output, filename), sky_map, nest=True)
+        sky_map = localize(
+            event, opts.waveform, opts.f_low, opts.min_distance,
+            opts.max_distance, opts.prior_distance_power, opts.cosmology,
+            method=method, nside=opts.nside, chain_dump=chain_dump,
+            enable_snr_series=opts.enable_snr_series,
+            f_high_truncate=opts.f_high_truncate)
+        sky_map.meta['objid'] = coinc_event_id
+        log.info(
+            "%s:method '%s':saving sky map",
+            coinc_event_id, method)
+        filename = '%d.%s.fits' % (int_coinc_event_id, method)
+        fits.write_sky_map(
+            os.path.join(opts.output, filename), sky_map, nest=True)
 
-if count_sky_maps_failed > 0:
-    raise RuntimeError("{0} sky map{1} did not converge".format(
-        count_sky_maps_failed, 's' if count_sky_maps_failed > 1 else ''))
+
+# Determine if we are running under MPI
+try:
+    from emcee.mpi_pool import MPIPool
+    pool = MPIPool(loadbalance=True)
+except (ImportError, ValueError):
+    log.info('Not using MPI')
+    map(partial(process, opts), six.iterkeys(event_source))
+else:
+    try:
+        log.info('Using %d MPI processes', pool.size)
+        pool.map(partial(process, opts), event_source.keys())
+    finally:
+        pool.close()
