@@ -39,6 +39,8 @@ where X is the LIGO-LW row id of the coinc and "toa" or "toa_phoa_snr"
 identifies whether the sky map accounts for times of arrival (TOA),
 PHases on arrival (PHOA), and amplitudes on arrival (SNR).
 """
+from __future__ import division
+from __future__ import print_function
 
 
 # Command line interface.
@@ -75,14 +77,20 @@ parser.add_argument(
     '--pycbc-sample', default='foreground',
     help='sample population [PyCBC only; default: %(default)s]')
 parser.add_argument(
-    '--coinc-event-id', type=int, nargs='*',
-    help='run on only these specified events')
-parser.add_argument(
     '--output', '-o', default='.',
     help='output directory [default: current directory]')
-parser.add_argument(
-    '--condor-submit', action='store_true',
-    help='submit to Condor instead of running locally')
+group = parser.add_argument_group(
+    'parallelization options', 'options for parallel or remote execution')
+submit_arg = group.add_argument(
+    '--submit', default='openmp', const='auto', nargs='?',
+    choices=('auto', 'openmp', 'condor', 'pbs'),
+    help='parallelize locally or submit to a cluster using a job scheduler')
+group.add_argument(
+    '-i', '--i', type=int,
+    help='job number (internal, used by --submit=condor or --submit=pbs)')
+group.add_argument(
+    '-j', '--jobs', nargs='?', default=1, type=int,
+    help='number of jobs/processes')
 opts = parser.parse_args()
 
 #
@@ -95,44 +103,125 @@ log = logging.getLogger('BAYESTAR')
 
 # BAYESTAR imports.
 from lalinference.io import fits, events
-from lalinference.bayestar.sky_map import localize
+from lalinference.bayestar.sky_map import (
+    localize, get_num_threads, set_num_threads)
 
 # Other imports.
 import os
 from collections import OrderedDict
+from distutils.spawn import find_executable
 import sys
+import tempfile
 
 # Read coinc file.
 log.info('%s:reading input files', ','.join(file.name for file in opts.input))
 event_source = events.open(*opts.input, sample=opts.pycbc_sample)
 
+# Decide on the type of parallelism.
+if opts.submit == 'auto':
+    if find_executable('qsub'):
+        opts.submit = 'pbs'
+    elif find_executable('condor'):
+        opts.submit = 'condor'
+if opts.submit in ('auto', 'openmp'):
+    try:
+        if opts.jobs is None:
+            opts.jobs = get_num_threads()
+        else:
+            set_num_threads(opts.jobs)
+    except NotImplementedError:
+        if opts.submit == 'openmp':
+            raise NotImplementedError(
+                'BAYESTAR was not built with OpenMP support')
+        else:
+            opts.submit = None
+    else:
+        opts.submit = 'openmp'
+
+# Prepare basic arguments for job submission
+if opts.submit in ('condor', 'pbs'):
+    if opts.i is not None:
+        raise ValueError(
+            'must not set -i with --submit=condor or --submit=pbs')
+
+    clean_args = list(sys.argv)
+    for choice in submit_arg.choices:
+        try:
+            clean_args.remove('--submit={}'.format(choice))
+        except ValueError:
+            pass
+        try:
+            i = clean_args.index('--submit')
+        except ValueError:
+            pass
+        else:
+            try:
+                next_arg = clean_args[i + 1]
+            except IndexError:
+                j = i + 1
+            else:
+                j = i + 2
+            del clean_args[i:j]
+
+    if opts.jobs is None or opts.jobs == 1:
+        raise RuntimeError(
+            '"--jobs j" with j > 1 is required with "--submit=condor" or '
+            '"--submit=pbs"')
+
+    if opts.submit == 'condor':
+        clean_args += ['-i', '$(Process)']
+        cmd = ['condor_submit', 'accounting_group=ligo.dev.o3.cbc.pe.bayestar',
+               'on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)',
+               'on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)',
+               'on_exit_hold_reason = (ExitBySignal == True ? '
+               'strcat("The job exited with signal ", ExitSignal) : '
+               'strcat("The job exited with signal ", ExitCode))',
+               'request_memory = 1000 MB', 'universe=vanilla', 'getenv=true',
+               'executable=' + sys.executable, 'JobBatchName=BAYESTAR',
+               'error=' + os.path.join(opts.output, '$(Cluster).$(Process).err'),
+               'log=' + os.path.join(opts.output, '$(Cluster).$(Process).log'),
+               'arguments="-B ' + ' '.join(arg for arg in clean_args) + '""',
+               '-append', 'queue {}'.format(len(event_source)), '/dev/null']
+        os.execvp('condor_submit', cmd)
+    elif opts.submit == 'pbs':
+        clean_args += ['-i', '${PBS_ARRAY_INDEX}']
+        with tempfile.NamedTemporaryFile(mode='w', prefix='bayestar',
+                                         suffix='.pbs', dir='.',
+                                         delete=False) as f:
+            filename = f.name
+            print('#PBS', '-V', file=f)
+            print('#PBS', '-S', '/bin/sh', file=f)
+            print('#PBS', '-l', 'select:1:ncpus=1:model=san', file=f)
+            print('#PBS', '-J', '0-{}'.format(opts.jobs - 1), file=f)
+            print(sys.executable, '-B', *clean_args, file=f)
+        os.execvp('qsub', ['qsub', filename])
+
 command.mkpath(opts.output)
-
-if opts.condor_submit:
-    if opts.coinc_event_id:
-        raise ValueError('must not set --coinc-event-id with --condor-submit')
-    cmd = ['condor_submit', 'accounting_group=ligo.dev.o3.cbc.pe.bayestar',
-           'on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)',
-           'on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)',
-           'on_exit_hold_reason = (ExitBySignal == True ? strcat("The job exited with signal ", ExitSignal) : strcat("The job exited with signal ", ExitCode))',
-           'request_memory = 1000 MB',
-           'universe=vanilla', 'getenv=true', 'executable=' + sys.executable,
-           'JobBatchName=BAYESTAR', 'environment="OMP_NUM_THREADS=1"',
-           'error=' + os.path.join(opts.output, '$(CoincEventId).err'),
-           'log=' + os.path.join(opts.output, '$(CoincEventId).log'),
-           'arguments="-B ' + ' '.join(arg for arg in sys.argv
-               if arg != '--condor-submit') + ' --coinc-event-id $(CoincEventId)"',
-           '-append', 'queue CoincEventId in ' + ' '.join(
-               str(coinc_event_id) for coinc_event_id in event_source),
-           '/dev/null']
-    os.execvp('condor_submit', cmd)
-
-# Loop over all coinc_event <-> sim_inspiral coincs.
-if opts.coinc_event_id:
-    event_source = OrderedDict(
-        (key, event_source[key]) for key in opts.coinc_event_id)
-
 count_sky_maps_failed = 0
+
+if opts.i is not None:
+    from lalinference.io.events.base import EventSource
+
+    class RangeEventSource(EventSource):
+        def __init__(self, source, i, j):
+            self._parent = source
+            keys = list(source.keys())
+            n = len(keys)
+            m = -(-n // j)
+            self._keys = keys[(i * m):((i + 1) * m)]
+
+        def __len__(self):
+            return len(self._keys)
+
+        def __iter__(self):
+            return iter(self._keys)
+
+        def __getitem__(self, key):
+            if key not in self._keys:
+                raise KeyError
+            return self._parent[key]
+
+    event_source = RangeEventSource(event_source, opts.i, opts.jobs)
 
 for int_coinc_event_id, event in event_source.items():
     coinc_event_id = 'coinc_event:coinc_event_id:{}'.format(int_coinc_event_id)

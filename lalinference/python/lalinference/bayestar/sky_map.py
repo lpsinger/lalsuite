@@ -42,6 +42,7 @@ except ImportError:
         'without HEALPix support. Please install CHEALPix '
         '(https://sourceforge.net/projects/healpix/files/Healpix_3.30/'
         'chealpix-3.30.0.tar.gz), rebuild LALInference, and try again.')
+from ._sky_map import get_num_threads, set_num_threads
 import lal
 import lalsimulation
 

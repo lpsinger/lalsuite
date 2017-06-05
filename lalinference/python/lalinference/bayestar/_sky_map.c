@@ -18,6 +18,9 @@
  */
 
 #include "config.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <Python.h>
 /* Ignore warnings in Numpy API itself */
 #pragma GCC diagnostic push
@@ -353,6 +356,34 @@ fail: /* Cleanup */
 };
 
 
+static PyObject *get_num_threads(PyObject *NPY_UNUSED(module), PyObject *arg)
+{
+    #ifdef _OPENMP
+    long i = omp_get_num_threads();
+    return PyLong_FromLong(i);
+    #else
+    PyErr_SetString(PyExc_NotImplementedError, "not built with OpenMP support");
+    return NULL;
+    #endif
+}
+
+
+static PyObject *set_num_threads(PyObject *NPY_UNUSED(module), PyObject *arg)
+{
+    long i = PyLong_AsLong(arg);
+    if (i == -1 && PyErr_Occurred())
+        return NULL;
+
+    #ifdef _OPENMP
+    omp_set_num_threads(i);
+    Py_RETURN_NONE;
+    #else
+    PyErr_SetString(PyExc_NotImplementedError, "not built with OpenMP support");
+    return NULL;
+    #endif
+}
+
+
 static PyObject *test(
     PyObject *NPY_UNUSED(module), PyObject *NPY_UNUSED(arg))
 {
@@ -371,6 +402,10 @@ static PyMethodDef methods[] = {
         METH_VARARGS | METH_KEYWORDS, "fill me in"},
     {"log_likelihood_toa_phoa_snr", (PyCFunction)log_likelihood_toa_phoa_snr,
         METH_VARARGS | METH_KEYWORDS, "fill me in"},
+    {"get_num_threads", (PyCFunction)set_num_threads,
+        METH_O, "fill me in"},
+    {"set_num_threads", (PyCFunction)set_num_threads,
+        METH_O, "fill me in"},
     {"test", (PyCFunction)test,
         METH_NOARGS, "fill me in"},
     {NULL, NULL, 0, NULL}
