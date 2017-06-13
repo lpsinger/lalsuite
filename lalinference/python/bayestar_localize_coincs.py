@@ -108,7 +108,6 @@ from lalinference.bayestar.sky_map import (
 
 # Other imports.
 import os
-from collections import OrderedDict
 from distutils.spawn import find_executable
 import sys
 import tempfile
@@ -189,7 +188,7 @@ if opts.submit in ('condor', 'pbs'):
                                          suffix='.pbs', dir='.',
                                          delete=False) as f:
             filename = f.name
-            print('#PBS', '-l', 'select:1:ncpus=1:model=san', file=f)
+            print('#PBS', '-l', 'select=1:ncpus=1:model=san', file=f)
             print('#PBS', '-S', '/bin/sh', file=f)
             print('#PBS', '-V', file=f)
             print('#PBS', '-J', '0-{}'.format(opts.jobs - 1), file=f)
