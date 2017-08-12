@@ -139,6 +139,9 @@ group.add_argument(
     '--cosmology', default=False, action='store_true',
     help='Use cosmological comoving volume prior [default: %(default)s]')
 group.add_argument(
+    '--face-on', default=False, action='store_true',
+    help='Restrict binary orientation to face-on [default: %(default)s]')
+group.add_argument(
     '--disable-snr-series', dest='enable_snr_series', action='store_false',
     help='Disable input of SNR time series (WARNING: UNREVIEWED!) '
     '[default: enabled]')

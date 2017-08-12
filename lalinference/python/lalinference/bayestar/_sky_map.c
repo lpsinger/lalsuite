@@ -117,6 +117,7 @@ static PyObject *sky_map_toa_phoa_snr(
     double max_distance;
     int prior_distance_power;
     int cosmology;
+    int face_on;
     double gmst;
     unsigned int nifos;
     unsigned long nsamples = 0;
@@ -129,16 +130,16 @@ static PyObject *sky_map_toa_phoa_snr(
 
     /* Names of arguments */
     static const char *keywords[] = {"min_distance", "max_distance",
-        "prior_distance_power", "cosmology", "gmst", "sample_rate", "epochs",
-        "snrs", "responses", "locations", "horizons", NULL};
+        "prior_distance_power", "cosmology", "face_on", "gmst", "sample_rate",
+        "epochs", "snrs", "responses", "locations", "horizons", NULL};
 
     /* Parse arguments */
     /* FIXME: PyArg_ParseTupleAndKeywords should expect keywords to be const */
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddiiddOOOOO",
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "ddiiiddOOOOO",
         keywords, &min_distance, &max_distance, &prior_distance_power,
-        &cosmology, &gmst, &sample_rate, &epochs_obj, &snrs_obj,
+        &cosmology, &face_on, &gmst, &sample_rate, &epochs_obj, &snrs_obj,
         &responses_obj, &locations_obj, &horizons_obj)) return NULL;
     #pragma GCC diagnostic pop
 
@@ -202,8 +203,8 @@ static PyObject *sky_map_toa_phoa_snr(
     bayestar_pixel *pixels;
     Py_BEGIN_ALLOW_THREADS
     pixels = bayestar_sky_map_toa_phoa_snr(&len, &log_bci, &log_bsn,
-        min_distance, max_distance, prior_distance_power, cosmology, gmst,
-        nifos, nsamples, sample_rate, epochs, snrs, responses, locations,
+        min_distance, max_distance, prior_distance_power, cosmology, face_on,
+        gmst, nifos, nsamples, sample_rate, epochs, snrs, responses, locations,
         horizons);
     Py_END_ALLOW_THREADS
     gsl_set_error_handler(old_handler);

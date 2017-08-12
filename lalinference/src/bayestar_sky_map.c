@@ -773,6 +773,7 @@ static void bayestar_sky_map_toa_phoa_snr_pixel(
     unsigned char nint,
     uint64_t uniq,
     double *const value,
+    int face_on,
     double gmst,
     unsigned int nifos,
     unsigned long nsamples,
@@ -785,9 +786,6 @@ static void bayestar_sky_map_toa_phoa_snr_pixel(
 ) {
     double complex F[nifos];
     double dt[nifos];
-    double accum[nint];
-    for (unsigned char k = 0; k < nint; k ++)
-        accum[k] = -INFINITY;
 
     {
         double theta, phi;
@@ -801,38 +799,55 @@ static void bayestar_sky_map_toa_phoa_snr_pixel(
         toa_errors(dt, theta, phi, gmst, nifos, locations, epochs);
     }
 
-    /* Integrate over 2*psi */
-    for (unsigned int itwopsi = 0; itwopsi < ntwopsi; itwopsi++)
+    if (face_on)
     {
-        const double twopsi = (2 * M_PI / ntwopsi) * itwopsi;
-        const double complex exp_i_twopsi = exp_i(twopsi);
-        double accum1[nint];
-        for (unsigned char k = 0; k < nint; k ++)
-            accum1[k] = -INFINITY;
-
-        /* Integrate over u from -1 to 1. */
-        for (unsigned int iu = 0; iu < nu; iu++)
+        double accum1[2][nint];
+        for (unsigned int iu = 0; iu < 2; iu++)
         {
-            const double u = u_points_weights[iu][0];
-            const double log_weight = u_points_weights[iu][1];
-            double log_sum_accum2[nint];
+            double u = 2 * (int) iu - 1;
             bayestar_sky_map_toa_phoa_snr_pixel_time_distance_integral(
-                integrators, F, dt, exp_i_twopsi, u, nint, log_sum_accum2,
-                nifos, nsamples, sample_rate, snrs);
+                integrators, F, dt, 1, u, nint, accum1[iu], nifos, nsamples,
+                sample_rate, snrs);
+        }
+        logsumexp(*accum1, -M_LN2, value, 2, nint);
+    } else {
+        double accum[nint];
+        for (unsigned char k = 0; k < nint; k ++)
+            accum[k] = -INFINITY;
+
+        /* Integrate over 2*psi */
+        for (unsigned int itwopsi = 0; itwopsi < ntwopsi; itwopsi++)
+        {
+            const double twopsi = (2 * M_PI / ntwopsi) * itwopsi;
+            const double complex exp_i_twopsi = exp_i(twopsi);
+            double accum1[nint];
             for (unsigned char k = 0; k < nint; k ++)
-                accum1[k] = logaddexp(accum1[k], log_sum_accum2[k] + log_weight);
+                accum1[k] = -INFINITY;
+
+            /* Integrate over u from -1 to 1. */
+            for (unsigned int iu = 0; iu < nu; iu++)
+            {
+                const double u = u_points_weights[iu][0];
+                const double log_weight = u_points_weights[iu][1];
+                double log_sum_accum2[nint];
+                bayestar_sky_map_toa_phoa_snr_pixel_time_distance_integral(
+                    integrators, F, dt, exp_i_twopsi, u, nint, log_sum_accum2,
+                    nifos, nsamples, sample_rate, snrs);
+                for (unsigned char k = 0; k < nint; k ++)
+                    accum1[k] = logaddexp(accum1[k], log_sum_accum2[k] + log_weight);
+            }
+
+            for (unsigned char k = 0; k < nint; k ++)
+            {
+                accum[k] = logaddexp(accum[k], accum1[k]);
+            }
         }
 
+        /* Record logarithm of posterior. */
         for (unsigned char k = 0; k < nint; k ++)
         {
-            accum[k] = logaddexp(accum[k], accum1[k]);
+            value[k] = accum[k];
         }
-    }
-
-    /* Record logarithm of posterior. */
-    for (unsigned char k = 0; k < nint; k ++)
-    {
-        value[k] = accum[k];
     }
 }
 
@@ -859,6 +874,7 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
     double max_distance,            /* Maximum distance */
     int prior_distance_power,       /* Power of distance in prior */
     int cosmology,                  /* Set to nonzero to include comoving volume correction */
+    int face_on,                    /* Set to nonzero to restrict inclination to face-on */
     /* Data */
     double gmst,                    /* GMST (rad) */
     unsigned int nifos,             /* Number of detectors */
@@ -928,15 +944,15 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
                 OMP_EXIT_LOOP_EARLY;
 
             bayestar_sky_map_toa_phoa_snr_pixel(integrators, 1, pixels[i].uniq,
-                pixels[i].value, gmst, nifos, nsamples, sample_rate, epochs,
-                snrs, responses, locations, horizons);
+                pixels[i].value, face_on, gmst, nifos, nsamples, sample_rate,
+                epochs, snrs, responses, locations, horizons);
 
             for (unsigned int iifo = 0; iifo < nifos; iifo ++)
             {
                 bayestar_sky_map_toa_phoa_snr_pixel(integrators, 1,
-                    pixels[i].uniq, &accum[i][iifo], gmst, 1, nsamples,
-                    sample_rate, &epochs[iifo], &snrs[iifo], &responses[iifo],
-                    &locations[iifo], &horizons[iifo]);
+                    pixels[i].uniq, &accum[i][iifo], face_on, gmst, 1,
+                    nsamples, sample_rate, &epochs[iifo], &snrs[iifo],
+                    &responses[iifo], &locations[iifo], &horizons[iifo]);
             }
         }
 
@@ -966,8 +982,8 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
                 OMP_EXIT_LOOP_EARLY;
 
             bayestar_sky_map_toa_phoa_snr_pixel(integrators, 1, pixels[i].uniq,
-                pixels[i].value, gmst, nifos, nsamples, sample_rate, epochs,
-                snrs, responses, locations, horizons);
+                pixels[i].value, face_on, gmst, nifos, nsamples, sample_rate,
+                epochs, snrs, responses, locations, horizons);
         }
 
         if (OMP_WAS_INTERRUPTED)
@@ -985,8 +1001,8 @@ bayestar_pixel *bayestar_sky_map_toa_phoa_snr(
             OMP_EXIT_LOOP_EARLY;
 
         bayestar_sky_map_toa_phoa_snr_pixel(&integrators[1], 2, pixels[i].uniq,
-            &pixels[i].value[1], gmst, nifos, nsamples, sample_rate, epochs,
-            snrs, responses, locations, horizons);
+            &pixels[i].value[1], face_on, gmst, nifos, nsamples, sample_rate,
+            epochs, snrs, responses, locations, horizons);
     }
 
 done:

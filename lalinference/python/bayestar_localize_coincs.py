@@ -152,7 +152,8 @@ for int_coinc_event_id, event in six.iteritems(event_source):
             sky_map = localize(
                 event, opts.waveform, opts.f_low, opts.min_distance,
                 opts.max_distance, opts.prior_distance_power, opts.cosmology,
-                method=method, nside=opts.nside, chain_dump=chain_dump,
+                opts.face_on,  method=method, nside=opts.nside,
+                chain_dump=chain_dump,
                 enable_snr_series=opts.enable_snr_series,
                 f_high_truncate=opts.f_high_truncate)
             sky_map.meta['objid'] = coinc_event_id

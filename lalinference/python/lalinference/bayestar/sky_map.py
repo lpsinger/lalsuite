@@ -137,8 +137,8 @@ def localize_emcee(
 def localize(
         event, waveform='o2-uberbank', f_low=30.0,
         min_distance=None, max_distance=None, prior_distance_power=None,
-        cosmology=False, method='toa_phoa_snr', nside=-1, chain_dump=None,
-        enable_snr_series=True, f_high_truncate=0.95):
+        cosmology=False, face_on=False, method='toa_phoa_snr', nside=-1,
+        chain_dump=None, enable_snr_series=True, f_high_truncate=0.95):
     """Convenience function to produce a sky map from LIGO-LW rows. Note that
     min_distance and max_distance should be in Mpc.
 
@@ -323,8 +323,9 @@ def localize(
     log.debug('starting computationally-intensive section')
     if method == 'toa_phoa_snr':
         skymap, log_bci, log_bsn = _sky_map.toa_phoa_snr(
-            min_distance, max_distance, prior_distance_power, cosmology, gmst,
-            sample_rate, toas, snr_series, responses, locations, horizons)
+            min_distance, max_distance, prior_distance_power, cosmology,
+            face_on, gmst, sample_rate, toas, snr_series, responses, locations,
+            horizons)
         skymap = Table(skymap)
         skymap.meta['log_bci'] = log_bci
         skymap.meta['log_bsn'] = log_bsn

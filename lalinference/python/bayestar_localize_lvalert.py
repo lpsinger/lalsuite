@@ -140,7 +140,7 @@ for graceid in six.iterkeys(event_source):
         sky_map = rasterize(localize(
             event, opts.waveform, opts.f_low, opts.min_distance,
             opts.max_distance, opts.prior_distance_power, opts.cosmology,
-            method=opts.method, nside=opts.nside,
+            opts.face_on, method=opts.method, nside=opts.nside,
             chain_dump=chain_dump, enable_snr_series=opts.enable_snr_series,
             f_high_truncate=opts.f_high_truncate))
         sky_map.meta['objid'] = str(graceid)
