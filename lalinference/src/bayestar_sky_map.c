@@ -712,6 +712,62 @@ static void logsumexp(const double *accum, double log_weight, double *result, un
 static const double FUDGE = 0.83;
 
 
+static void bayestar_sky_map_toa_phoa_snr_pixel_time_distance_integral(
+    log_radial_integrator *integrators[],
+    const double complex *F,
+    const double *dt,
+    double complex exp_i_twopsi,
+    double u,
+    unsigned char nint,
+    double *const value,
+    unsigned int nifos,
+    unsigned long nsamples,
+    double sample_rate,
+    const float complex **snrs
+) {
+    double accum2[nsamples][nint];
+    const double u2 = gsl_pow_2(u);
+    double complex z_times_r[nifos];
+    double p2 = 0;
+
+    for (unsigned int iifo = 0; iifo < nifos; iifo ++)
+    {
+        p2 += cabs2(
+            z_times_r[iifo] = signal_amplitude_model(
+                F[iifo], exp_i_twopsi, u, u2));
+    }
+    p2 *= 0.5;
+    p2 *= gsl_pow_2(FUDGE);
+    const double p = sqrt(p2);
+    const double log_p = log(p);
+
+    for (unsigned long isample = 0; isample < nsamples; isample++)
+    {
+        double b;
+        {
+            double complex I0arg_complex_times_r = 0;
+            for (unsigned int iifo = 0; iifo < nifos; iifo ++)
+            {
+                I0arg_complex_times_r += conj(z_times_r[iifo])
+                    * eval_snr(snrs[iifo], nsamples,
+                        isample - dt[iifo] * sample_rate - 0.5 * (nsamples - 1));
+            }
+            b = cabs(I0arg_complex_times_r);
+            b *= gsl_pow_2(FUDGE);
+        }
+        const double log_b = log(b);
+
+        for (unsigned char k = 0; k < nint; k ++)
+        {
+            accum2[isample][k] = log_radial_integrator_eval(
+                integrators[k], p, b, log_p, log_b);
+        }
+    }
+
+    logsumexp(*accum2, 0.0, value, nsamples, nint);
+}
+
+
 static void bayestar_sky_map_toa_phoa_snr_pixel(
     log_radial_integrator *integrators[],
     unsigned char nint,
@@ -759,50 +815,12 @@ static void bayestar_sky_map_toa_phoa_snr_pixel(
         {
             const double u = u_points_weights[iu][0];
             const double log_weight = u_points_weights[iu][1];
-            double accum2[nsamples][nint];
-
-            const double u2 = gsl_pow_2(u);
-            double complex z_times_r[nifos];
-            double p2 = 0;
-
-            for (unsigned int iifo = 0; iifo < nifos; iifo ++)
-            {
-                p2 += cabs2(
-                    z_times_r[iifo] = signal_amplitude_model(
-                        F[iifo], exp_i_twopsi, u, u2));
-            }
-            p2 *= 0.5;
-            p2 *= gsl_pow_2(FUDGE);
-            const double p = sqrt(p2);
-            const double log_p = log(p);
-
-            for (unsigned long isample = 0; isample < nsamples; isample++)
-            {
-                double b;
-                {
-                    double complex I0arg_complex_times_r = 0;
-                    for (unsigned int iifo = 0; iifo < nifos; iifo ++)
-                    {
-                        I0arg_complex_times_r += conj(z_times_r[iifo])
-                            * eval_snr(snrs[iifo], nsamples,
-                                isample - dt[iifo] * sample_rate - 0.5 * (nsamples - 1));
-                    }
-                    b = cabs(I0arg_complex_times_r);
-                    b *= gsl_pow_2(FUDGE);
-                }
-                const double log_b = log(b);
-
-                for (unsigned char k = 0; k < nint; k ++)
-                {
-                    accum2[isample][k] = log_radial_integrator_eval(
-                        integrators[k], p, b, log_p, log_b);
-                }
-            }
-
             double log_sum_accum2[nint];
-            logsumexp(*accum2, log_weight, log_sum_accum2, nsamples, nint);
+            bayestar_sky_map_toa_phoa_snr_pixel_time_distance_integral(
+                integrators, F, dt, exp_i_twopsi, u, nint, log_sum_accum2,
+                nifos, nsamples, sample_rate, snrs);
             for (unsigned char k = 0; k < nint; k ++)
-                accum1[k] = logaddexp(accum1[k], log_sum_accum2[k]);
+                accum1[k] = logaddexp(accum1[k], log_sum_accum2[k] + log_weight);
         }
 
         for (unsigned char k = 0; k < nint; k ++)
